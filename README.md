@@ -1,6 +1,6 @@
 # git-started
 
-[Documentation](https://cstaks-wiki.callen.page/share/cszvqiq9s6/p/home-F8XEBpCwqM)
+[Documentation](https://cstaks-wiki.callen.page/en/Git-Started/Git-Started-Home)
 
 A fast, native Git GUI built with [Tauri](https://tauri.app), React, and Rust.
 

@@ -1,5 +1,6 @@
 use git2::{Repository, Sort};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::process::Command;
 
 // ────────────────────── Data types sent to the frontend ──────────────────────
@@ -68,7 +69,7 @@ pub struct SigningInfo {
     key_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct RebaseCommit {
     oid: String,
     short_oid: String,
@@ -143,7 +144,7 @@ fn build_repo_info(repo: &Repository, path: &str) -> Result<RepoInfo, String> {
     let head_branch = repo
         .head()
         .ok()
-        .and_then(|h| h.shorthand().map(String::from))
+        .and_then(|h| h.shorthand().ok().map(String::from))
         .unwrap_or_else(|| "HEAD".to_string());
 
     let name = Path::new(path)
@@ -258,7 +259,7 @@ fn get_status(repo_path: String) -> Result<Vec<FileStatus>, String> {
 fn get_diff(repo_path: String, file_path: String, staged: bool) -> Result<String, String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
 
-    let mut diff_opts = git2::differ::DiffOptions::new();
+    let mut diff_opts = git2::DiffOptions::new();
     diff_opts.pathspec(&file_path);
 
     let diff = if staged {
@@ -272,7 +273,7 @@ fn get_diff(repo_path: String, file_path: String, staged: bool) -> Result<String
         match (head, tree) {
             (Some(head), Some(tree)) => {
                 let head_tree = head.tree().map_err(|e| e.to_string())?;
-                repo.diff_tree_to_tree(&head_tree, Some(&tree), Some(&mut diff_opts))
+                repo.diff_tree_to_tree(Some(&head_tree), Some(&tree), Some(&mut diff_opts))
                     .map_err(|e| e.to_string())?
             }
             (None, Some(tree)) => {
@@ -290,26 +291,12 @@ fn get_diff(repo_path: String, file_path: String, staged: bool) -> Result<String
     };
 
     let mut patch_text = String::new();
-    for i in 0..diff.deltas().len() {
-        if let Ok(patch) = diff.patch_index(i) {
-            patch
-                .to_buf(git2::PatchFormat::Patch)
-                .map_err(|e| e.to_string())?
-                .as_str()
-                .map(|s| patch_text.push_str(s))
-                .unwrap_or(());
-        }
-    }
-
-    // If the structured diff is empty, fall back to a raw unified diff string.
-    if patch_text.is_empty() {
-        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
-            let content = std::str::from_utf8(line.content()).unwrap_or("");
-            patch_text.push_str(content);
-            true
-        })
-        .map_err(|e| e.to_string())?;
-    }
+    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        let content = std::str::from_utf8(line.content()).unwrap_or("");
+        patch_text.push_str(content);
+        true
+    })
+    .map_err(|e| e.to_string())?;
 
     Ok(patch_text)
 }
@@ -329,13 +316,13 @@ fn get_log(repo_path: String, max: Option<usize>) -> Result<Vec<CommitInfo>, Str
     if let Ok(branches) = repo.branches(Some(git2::BranchType::Local)) {
         for branch_result in branches {
             if let Ok((branch, _bt)) = branch_result {
-                if let Ok(Some(ref_name)) = branch.get().name() {
+                if let Ok(ref_name) = branch.get().name() {
                     if let Ok(oid) = branch.get().resolve().map(|r| r.target()) {
                         let short = ref_name
                             .strip_prefix("refs/heads/")
                             .unwrap_or(ref_name)
                             .to_string();
-                        branch_map.insert(short, oid);
+                        branch_map.insert(short, oid.unwrap());
                     }
                 }
             }
@@ -433,7 +420,7 @@ fn do_commit(
     if amend {
         if let Some(mut old) = head_commit {
             let oid = old
-                .amend(Some("HEAD"), &sig, &sig, None, Some(&message), Some(&tree))
+                .amend(Some("HEAD"), Some(&sig), Some(&sig), Some(&message), Some(&tree), None)
                 .map_err(|e| e.to_string())?;
             return Ok(oid_to_hex(oid));
         }
@@ -517,7 +504,7 @@ fn stage_file(repo_path: String, file_path: String) -> Result<(), String> {
 #[tauri::command]
 fn unstage_file(repo_path: String, file_path: String) -> Result<(), String> {
     let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
-    let head = repo.head().and_then(|h| h.peel_to_tree()).ok();
+    let head = repo.head().and_then(|h| h.peel(git2::ObjectType::Tree)).ok();
     repo.reset_default(head.as_ref(), &[Path::new(&file_path)])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -526,7 +513,7 @@ fn unstage_file(repo_path: String, file_path: String) -> Result<(), String> {
 /// Stage all tracked and untracked files.
 #[tauri::command]
 fn stage_all(repo_path: String) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let mut index = repo.index().map_err(|e| e.to_string())?;
     index.add_all(["*"], git2::IndexAddOption::DEFAULT, None)
         .map_err(|e| e.to_string())?;
@@ -538,8 +525,9 @@ fn stage_all(repo_path: String) -> Result<(), String> {
 #[tauri::command]
 fn unstage_all(repo_path: String) -> Result<(), String> {
     let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
-    let head = repo.head().and_then(|h| h.peel_to_tree()).ok();
-    repo.reset_default(head.as_ref(), &[]).map_err(|e| e.to_string())?;
+    let head = repo.head().and_then(|h| h.peel(git2::ObjectType::Tree)).ok();
+    let empty_paths: Vec<&Path> = Vec::new();
+    repo.reset_default(head.as_ref(), empty_paths).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -569,6 +557,7 @@ fn get_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
                 let upstream = branch.upstream().ok().and_then(|u| {
                     u.get()
                         .name()
+                        .ok()
                         .map(|n| {
                             n.strip_prefix("refs/remotes/")
                                 .unwrap_or(n)
@@ -603,7 +592,8 @@ fn checkout_branch(repo_path: String, target: String) -> Result<(), String> {
 
     // Try as a branch first.
     if let Ok(reference) = repo.find_branch(&target, git2::BranchType::Local) {
-        repo.checkout_tree(reference.get().peel_to_object().as_ref(), None)
+        let obj = reference.get().peel(git2::ObjectType::Any).map_err(|e| e.to_string())?;
+        repo.checkout_tree(&obj, None)
             .map_err(|e| e.to_string())?;
         repo.set_head(&format!("refs/heads/{}", target))
             .map_err(|e| e.to_string())?;
@@ -617,7 +607,8 @@ fn checkout_branch(repo_path: String, target: String) -> Result<(), String> {
         let branch = repo
             .branch(&target, &commit, false)
             .map_err(|e| e.to_string())?;
-        repo.checkout_tree(branch.get().peel_to_object().as_ref(), None)
+        let obj = branch.get().peel(git2::ObjectType::Any).map_err(|e| e.to_string())?;
+        repo.checkout_tree(&obj, None)
             .map_err(|e| e.to_string())?;
         repo.set_head(&format!("refs/heads/{}", target))
             .map_err(|e| e.to_string())?;
@@ -638,7 +629,7 @@ fn checkout_branch(repo_path: String, target: String) -> Result<(), String> {
 /// Create a new branch at HEAD.
 #[tauri::command]
 fn create_branch(repo_path: String, name: String) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let head = repo.head().and_then(|h| h.peel_to_commit()).map_err(|e| e.to_string())?;
     repo.branch(&name, &head, false).map_err(|e| e.to_string())?;
     Ok(())
@@ -647,8 +638,8 @@ fn create_branch(repo_path: String, name: String) -> Result<(), String> {
 /// Delete a local branch.
 #[tauri::command]
 fn delete_branch(repo_path: String, name: String) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
-    let branch = repo
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let mut branch = repo
         .find_branch(&name, git2::BranchType::Local)
         .map_err(|e| e.to_string())?;
     branch.delete().map_err(|e| e.to_string())?;
@@ -660,7 +651,7 @@ fn delete_branch(repo_path: String, name: String) -> Result<(), String> {
 /// Push the current branch to a remote.
 #[tauri::command]
 fn do_push(repo_path: String, remote: String, branch: String) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let mut remote = repo.find_remote(&remote).map_err(|e| e.to_string())?;
     let refspec = format!("refs/heads/{}:refs/heads/{}", branch, branch);
     remote
@@ -683,23 +674,26 @@ fn do_pull(repo_path: String, remote: String, branch: String) -> Result<(), Stri
 
     // Merge the fetched branch.
     let fetch_branch = format!("{}/{}", remote_name, branch);
+    let reference =
+        repo.find_reference(&fetch_branch)
+            .map_err(|e| e.to_string())?;
     let annotated =
-        repo.reference_to_annotated_commit(&fetch_branch)
+        repo.reference_to_annotated_commit(&reference)
             .map_err(|e| e.to_string())?;
 
     let analysis = repo.merge_analysis(&[&annotated]).map_err(|e| e.to_string())?;
 
     if analysis.0.is_fast_forward() {
-        if let Some(oid) = annotated.target() {
-            let refname = format!("refs/heads/{}", branch);
-            repo.reference(&refname, oid, true, "pull: fast-forward", None)
-                .map_err(|e| e.to_string())?;
-            repo.checkout_tree(annotated.as_object(), None)
-                .map_err(|e| e.to_string())?;
-        }
+        let oid = annotated.id();
+        let refname = format!("refs/heads/{}", branch);
+        repo.reference(&refname, oid, true, "pull: fast-forward")
+            .map_err(|e| e.to_string())?;
+        let obj = repo.find_object(annotated.id(), None).map_err(|e| e.to_string())?;
+        repo.checkout_tree(&obj, None)
+            .map_err(|e| e.to_string())?;
     } else if analysis.0.is_normal() {
         let head_commit = repo.head().and_then(|h| h.peel_to_commit()).map_err(|e| e.to_string())?;
-        repo.merge(&[&annotated], None)
+        repo.merge(&[&annotated], None, None)
             .map_err(|e| e.to_string())?;
 
         let sig = repo.signature().map_err(|e| e.to_string())?;
@@ -708,6 +702,7 @@ fn do_pull(repo_path: String, remote: String, branch: String) -> Result<(), Stri
         let tree = repo
             .find_tree(index.write_tree().map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
+        let merge_commit = repo.find_commit(annotated.id()).map_err(|e| e.to_string())?;
 
         repo.commit(
             Some("HEAD"),
@@ -715,9 +710,7 @@ fn do_pull(repo_path: String, remote: String, branch: String) -> Result<(), Stri
             &sig,
             &format!("Merge '{}' into {}", remote_name, branch),
             &tree,
-            &[&head_commit, &annotated
-                .to_commit()
-                .map_err(|e| e.to_string())?],
+            &[&head_commit, &merge_commit],
         )
         .map_err(|e| e.to_string())?;
 
@@ -734,7 +727,7 @@ fn do_pull(repo_path: String, remote: String, branch: String) -> Result<(), Stri
 fn do_fetch(repo_path: String, remote: String) -> Result<(), String> {
     let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let mut remote = repo.find_remote(&remote).map_err(|e| e.to_string())?;
-    remote.fetch(&[], None, None).map_err(|e| e.to_string())?;
+    remote.fetch::<&str>(&[], None, None).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -745,11 +738,11 @@ fn get_remotes(repo_path: String) -> Result<Vec<RemoteInfo>, String> {
     let mut result = Vec::new();
 
     for remote_result in repo.remotes().map_err(|e| e.to_string())?.iter() {
-        if let Some(name) = remote_result {
+        if let Ok(Some(name)) = remote_result {
             let url = repo
                 .find_remote(name)
                 .ok()
-                .and_then(|r| r.url().map(String::from))
+                .and_then(|r| r.url().map(String::from).ok())
                 .unwrap_or_default();
             result.push(RemoteInfo {
                 name: name.to_string(),
@@ -784,11 +777,11 @@ fn stash_pop(repo_path: String) -> Result<(), String> {
 /// List all stashes.
 #[tauri::command]
 fn get_stashes(repo_path: String) -> Result<Vec<StashInfo>, String> {
-    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let mut result = Vec::new();
 
     let _ = repo.stash_foreach(|index, _oid, msg| {
-        let message = msg.unwrap_or("No message").to_string();
+        let message = msg.to_string();
         // Extract branch name from stash message (e.g. "On branch: message").
         let branch = message
             .splitn(2, ':')
@@ -804,7 +797,7 @@ fn get_stashes(repo_path: String) -> Result<Vec<StashInfo>, String> {
             branch,
             timestamp: 0,
         });
-        Ok(true)
+        true
     });
 
     Ok(result)
@@ -818,16 +811,19 @@ fn get_tags(repo_path: String) -> Result<Vec<TagInfo>, String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let mut result = Vec::new();
 
-    if let Ok(tags) = repo.tags() {
-        for tag_result in tags {
-            if let Ok(tag) = tag_result {
-                let name = tag.name().unwrap_or("").to_string();
-                let oid = oid_to_hex(tag.id());
-                let message = tag.message().map(String::from);
-                result.push(TagInfo { name, oid, message });
-            }
-        }
-    }
+    repo.tag_foreach(|oid, name| {
+        let name_str = std::str::from_utf8(name).unwrap_or("").to_string();
+        let oid_hex = oid_to_hex(oid);
+        let message = repo.find_tag(oid)
+            .ok()
+            .and_then(|t| t.message().ok().map(String::from));
+        result.push(TagInfo {
+            name: name_str,
+            oid: oid_hex,
+            message,
+        });
+        true
+    }).map_err(|e| e.to_string())?;
 
     Ok(result)
 }
@@ -836,7 +832,7 @@ fn get_tags(repo_path: String) -> Result<Vec<TagInfo>, String> {
 #[tauri::command]
 fn create_tag(repo_path: String, name: String) -> Result<(), String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
-    let head = repo.head().and_then(|h| h.peel_to_object()).map_err(|e| e.to_string())?;
+    let head = repo.head().and_then(|h| h.peel(git2::ObjectType::Any)).map_err(|e| e.to_string())?;
     repo.tag_lightweight(&name, &head, false)
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -1052,7 +1048,6 @@ fn get_conflicts(repo_path: String) -> Result<Vec<ConflictFile>, String> {
 
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let mut index = repo.index().map_err(|e| e.to_string())?;
-    index.add_conflicts_from_dir(Path::new(".")).ok();
     index.write().ok();
 
     let mut conflicts = Vec::new();
@@ -1062,14 +1057,9 @@ fn get_conflicts(repo_path: String) -> Result<Vec<ConflictFile>, String> {
                 let path_str = entry
                     .ancestor
                     .as_ref()
-                    .or(entry.ourself.as_ref())
-                    .or(entry.theirself.as_ref())
-                    .map(|e| {
-                        e.path
-                            .as_ref()
-                            .map(|p| p.to_string_lossy().to_string())
-                            .unwrap_or_default()
-                    })
+                    .or(entry.our.as_ref())
+                    .or(entry.their.as_ref())
+                    .map(|e| String::from_utf8_lossy(&e.path).to_string())
                     .unwrap_or_default();
 
                 // Read conflict markers from the file.
@@ -1224,7 +1214,7 @@ fn get_submodules(repo_path: String) -> Result<Vec<SubmoduleInfo>, String> {
         for sm in submodules {
             let name = sm.name().unwrap_or("").to_string();
             let path = sm.path().to_string_lossy().to_string();
-            let url = sm.url().unwrap_or("").to_string();
+            let url = sm.url().ok().flatten().map(String::from).unwrap_or_default();
             let head_oid = sm
                 .head_id()
                 .map(|oid| oid_to_hex(oid))
@@ -1482,7 +1472,7 @@ fn save_credential(protocol: String, host: String, username: String, password: S
         protocol, host, username, password
     );
 
-    let output = Command::new("git")
+    let mut output = Command::new("git")
         .args(["credential", "approve"])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -1491,7 +1481,7 @@ fn save_credential(protocol: String, host: String, username: String, password: S
         .map_err(|e| format!("Failed to run git credential: {}", e))?;
 
     // Write to stdin and close.
-    if let Some(mut stdin) = output.stdin {
+    if let Some(ref mut stdin) = output.stdin {
         use std::io::Write;
         stdin.write_all(input.as_bytes()).map_err(|e| e.to_string())?;
     }
@@ -1510,7 +1500,7 @@ fn save_credential(protocol: String, host: String, username: String, password: S
 fn remove_credential(protocol: String, host: String) -> Result<(), String> {
     let input = format!("protocol={}\nhost={}\n", protocol, host);
 
-    let output = Command::new("git")
+    let mut output = Command::new("git")
         .args(["credential", "reject"])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -1518,7 +1508,7 @@ fn remove_credential(protocol: String, host: String) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("Failed to run git credential: {}", e))?;
 
-    if let Some(mut stdin) = output.stdin {
+    if let Some(ref mut stdin) = output.stdin {
         use std::io::Write;
         stdin.write_all(input.as_bytes()).map_err(|e| e.to_string())?;
     }
