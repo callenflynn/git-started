@@ -1,0 +1,165 @@
+import { useRepoStore } from "../stores/repo-store";
+import {
+  useRepoStatus,
+  useStageFile,
+  useUnstageFile,
+  useStageAll,
+  useUnstageAll,
+} from "../hooks/useGit";
+import type { FileStatus } from "../lib/types";
+import {
+  Plus,
+  Minus,
+  FileText,
+  FilePlus,
+  FileMinus,
+  FileEdit,
+  ArrowRightLeft,
+  CircleHelp,
+  CheckCheck,
+  Undo2,
+} from "lucide-react";
+
+function statusIcon(status: FileStatus["status"]) {
+  const s = 14;
+  switch (status) {
+    case "added":
+      return <FilePlus size={s} style={{ color: "#22C55E" }} />;
+    case "modified":
+      return <FileEdit size={s} style={{ color: "#F59E0B" }} />;
+    case "deleted":
+      return <FileMinus size={s} style={{ color: "#EF4444" }} />;
+    case "renamed":
+      return <ArrowRightLeft size={s} style={{ color: "#A855F7" }} />;
+    case "untracked":
+      return <CircleHelp size={s} style={{ color: "var(--text-muted)" }} />;
+  }
+}
+
+function FileItem({ file }: { file: FileStatus }) {
+  const selectedFile = useRepoStore((s) => s.selectedFile);
+  const selectedStaged = useRepoStore((s) => s.selectedStaged);
+  const selectFile = useRepoStore((s) => s.selectFile);
+  const stageMut = useStageFile();
+  const unstageMut = useUnstageFile();
+
+  const isSelected = selectedFile === file.path && selectedStaged === file.staged;
+
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-1 cursor-pointer group transition-colors"
+      style={{
+        background: isSelected ? "var(--bg-hover)" : "transparent",
+      }}
+      onClick={() => selectFile(file.path, file.staged)}
+    >
+      {statusIcon(file.status)}
+      <span className="text-sm truncate flex-1"
+            style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
+        {file.path}
+      </span>
+      {file.old_path && (
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+          ← {file.old_path}
+        </span>
+      )}
+      {!file.staged ? (
+        <button
+          className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity hover:bg-green-500/20"
+          onClick={(e) => { e.stopPropagation(); stageMut.mutate(file.path); }}
+          title="Stage file"
+        >
+          <Plus size={14} style={{ color: "#22C55E" }} />
+        </button>
+      ) : (
+        <button
+          className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity hover:bg-red-500/20"
+          onClick={(e) => { e.stopPropagation(); unstageMut.mutate(file.path); }}
+          title="Unstage file"
+        >
+          <Minus size={14} style={{ color: "#EF4444" }} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Section({ title, files, onAction, actionIcon }: {
+  title: string;
+  files: FileStatus[];
+  onAction?: () => void;
+  actionIcon?: React.ReactNode;
+}) {
+  if (files.length === 0) return null;
+
+  return (
+    <div>
+      <div
+        className="flex items-center justify-between px-3 py-1.5"
+        style={{ borderBottom: "1px solid var(--border)" }}
+      >
+        <span className="text-xs font-semibold uppercase tracking-wider"
+              style={{ color: "var(--text-muted)" }}>
+          {title} ({files.length})
+        </span>
+        {onAction && (
+          <button
+            className="p-0.5 rounded transition-colors hover:bg-white/10"
+            onClick={onAction}
+            title={title === "Staged" ? "Unstage all" : "Stage all"}
+          >
+            {actionIcon}
+          </button>
+        )}
+      </div>
+      {files.map((f) => (
+        <FileItem key={f.path + String(f.staged)} file={f} />
+      ))}
+    </div>
+  );
+}
+
+export function FilePanel() {
+  const status = useRepoStatus();
+  const files = status.data ?? [];
+
+  const staged = files.filter((f) => f.staged);
+  const unstaged = files.filter((f) => !f.staged);
+  const untracked = unstaged.filter((f) => f.status === "untracked");
+  const modified = unstaged.filter((f) => f.status !== "untracked");
+
+  const stageAllMut = useStageAll();
+  const unstageAllMut = useUnstageAll();
+
+  if (status.isLoading) {
+    return (
+      <div className="flex items-center justify-center p-4 text-sm"
+           style={{ color: "var(--text-muted)" }}>
+        Loading status...
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-y-auto" style={{ borderBottom: "1px solid var(--border)" }}>
+      <Section
+        title="Staged"
+        files={staged}
+        onAction={() => unstageAllMut.mutate()}
+        actionIcon={<Undo2 size={13} style={{ color: "var(--text-muted)" }} />}
+      />
+      <Section
+        title="Modified"
+        files={modified}
+        onAction={() => stageAllMut.mutate()}
+        actionIcon={<CheckCheck size={13} style={{ color: "var(--text-muted)" }} />}
+      />
+      <Section
+        title="Untracked"
+        files={untracked}
+        onAction={() => stageAllMut.mutate()}
+        actionIcon={<CheckCheck size={13} style={{ color: "var(--text-muted)" }} />}
+      />
+    </div>
+  );
+}

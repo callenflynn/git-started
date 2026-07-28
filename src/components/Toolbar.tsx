@@ -1,0 +1,143 @@
+import { useRepoStore } from "../stores/repo-store";
+import {
+  useBranches,
+  usePush,
+  usePull,
+  useFetch,
+  useStash,
+} from "../hooks/useGit";
+import { ThemeToggle } from "./ThemeToggle";
+import {
+  ArrowUp,
+  ArrowDown,
+  RefreshCw,
+  Archive,
+  FolderOpen,
+} from "lucide-react";
+
+export function Toolbar() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  const setRepoPath = useRepoStore((s) => s.setRepoPath);
+  const branches = useBranches();
+  const pushMut = usePush();
+  const pullMut = usePull();
+  const fetchMut = useFetch();
+  const stashMut = useStash();
+
+  const currentBranch = branches.data?.find((b) => b.is_head);
+
+  async function handleOpen() {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({ directory: true, multiple: false });
+    if (typeof selected === "string") {
+      const { openRepo } = await import("../lib/tauri");
+      const info = await openRepo(selected);
+      setRepoPath(info.path);
+    }
+  }
+
+  function handlePush() {
+    if (!currentBranch) return;
+    pushMut.mutate({ remote: "origin", branch: currentBranch.name });
+  }
+
+  function handlePull() {
+    if (!currentBranch) return;
+    pullMut.mutate({ remote: "origin", branch: currentBranch.name });
+  }
+
+  function handleFetch() {
+    fetchMut.mutate("origin");
+  }
+
+  const btnClass =
+    "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50";
+
+  return (
+    <header
+      className="flex items-center gap-2 px-3 h-11 shrink-0"
+      style={{
+        background: "var(--bg-nav)",
+        borderBottom: "1px solid var(--border)",
+      }}
+    >
+      {/* Brand */}
+      <span
+        className="text-xl font-bold mr-2 select-none"
+        style={{ fontFamily: "var(--font-brand)", color: "var(--accent)" }}
+      >
+        git-started
+      </span>
+
+      {/* Branch indicator */}
+      {currentBranch && (
+        <span
+          className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium"
+          style={{ background: "var(--bg-card)", color: "var(--accent)" }}
+        >
+          <span style={{ fontFamily: "var(--font-mono)" }}>
+            {currentBranch.name}
+          </span>
+        </span>
+      )}
+
+      <div className="flex-1" />
+
+      {/* Actions */}
+      <button
+        className={btnClass}
+        style={{ background: "var(--bg-card)", color: "var(--text-primary)" }}
+        onClick={handlePush}
+        disabled={!currentBranch || pushMut.isPending}
+        title="Push"
+      >
+        <ArrowUp size={14} />
+        Push
+      </button>
+
+      <button
+        className={btnClass}
+        style={{ background: "var(--bg-card)", color: "var(--text-primary)" }}
+        onClick={handlePull}
+        disabled={!currentBranch || pullMut.isPending}
+        title="Pull"
+      >
+        <ArrowDown size={14} />
+        Pull
+      </button>
+
+      <button
+        className={btnClass}
+        style={{ background: "var(--bg-card)", color: "var(--text-primary)" }}
+        onClick={handleFetch}
+        disabled={fetchMut.isPending}
+        title="Fetch"
+      >
+        <RefreshCw size={14} className={fetchMut.isPending ? "animate-spin" : ""} />
+      </button>
+
+      <button
+        className={btnClass}
+        style={{ background: "var(--bg-card)", color: "var(--text-primary)" }}
+        onClick={() => stashMut.mutate()}
+        disabled={stashMut.isPending}
+        title="Stash changes"
+      >
+        <Archive size={14} />
+      </button>
+
+      <div className="w-px h-5 mx-1" style={{ background: "var(--border-strong)" }} />
+
+      <button
+        className={btnClass}
+        style={{ background: "var(--bg-card)", color: "var(--text-primary)" }}
+        onClick={handleOpen}
+        title="Open another repository"
+      >
+        <FolderOpen size={14} />
+      </button>
+
+      <ThemeToggle />
+    </header>
+  );
+}

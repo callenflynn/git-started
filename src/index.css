@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ======================== BASE TOKENS ======================== */
+:root {
+  --accent: #ED5001;
+  --accent-hover: #C94401;
+  --accent-glow: rgba(237, 80, 1, 0.25);
+  --font-brand: "Amatic SC", cursive;
+  --font-body: "Lora", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.3s ease;
+  --transition-slow: 0.5s ease;
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+
+/* ======================== DARK THEME (default) ======================== */
+[data-theme="dark"] {
+  --bg-primary: #1E1E1E;
+  --bg-secondary: #252525;
+  --bg-card: #2A2A2A;
+  --bg-hover: #333333;
+  --bg-glass: rgba(30, 30, 30, 0.75);
+  --bg-nav: rgba(30, 30, 30, 0.9);
+  --text-primary: #FFFDF7;
+  --text-secondary: #C8C0B0;
+  --text-muted: #8A8070;
+  --text-inverse: #1E1E1E;
+  --border: rgba(255, 253, 247, 0.08);
+  --border-strong: rgba(255, 253, 247, 0.15);
+  --diff-add-bg: rgba(80, 200, 80, 0.1);
+  --diff-add-line: rgba(80, 200, 80, 0.25);
+  --diff-del-bg: rgba(200, 80, 80, 0.1);
+  --diff-del-line: rgba(200, 80, 80, 0.25);
+  --graph-main: #ED5001;
+  --graph-branch1: #4A9EFF;
+  --graph-branch2: #A855F7;
+  --graph-branch3: #22C55E;
+  --graph-branch4: #F59E0B;
+}
+
+/* ======================== AMOLED THEME ======================== */
+[data-theme="amoled"] {
+  --bg-primary: #000000;
+  --bg-secondary: #0A0A0A;
+  --bg-card: #111111;
+  --bg-hover: #1A1A1A;
+  --bg-glass: rgba(0, 0, 0, 0.85);
+  --bg-nav: rgba(0, 0, 0, 0.95);
+  --text-primary: #FFFDF7;
+  --text-secondary: #C8C0B0;
+  --text-muted: #6A6050;
+  --text-inverse: #000000;
+  --border: rgba(255, 253, 247, 0.06);
+  --border-strong: rgba(255, 253, 247, 0.12);
+  --diff-add-bg: rgba(80, 200, 80, 0.08);
+  --diff-add-line: rgba(80, 200, 80, 0.2);
+  --diff-del-bg: rgba(200, 80, 80, 0.08);
+  --diff-del-line: rgba(200, 80, 80, 0.2);
+  --graph-main: #ED5001;
+  --graph-branch1: #4A9EFF;
+  --graph-branch2: #A855F7;
+  --graph-branch3: #22C55E;
+  --graph-branch4: #F59E0B;
+}
+
+/* ======================== LIGHT THEME ======================== */
+[data-theme="light"] {
+  --bg-primary: #FFEFE0;
+  --bg-secondary: #FFF4E8;
+  --bg-card: #FFFFFF;
+  --bg-hover: #F5E6D0;
+  --bg-glass: rgba(255, 255, 255, 0.7);
+  --bg-nav: rgba(255, 239, 224, 0.85);
+  --text-primary: #242424;
+  --text-secondary: #5A4A3A;
+  --text-muted: #8A7A6A;
+  --text-inverse: #FFFFFF;
+  --border: rgba(36, 36, 36, 0.1);
+  --border-strong: rgba(36, 36, 36, 0.2);
+  --diff-add-bg: rgba(80, 180, 80, 0.1);
+  --diff-add-line: rgba(80, 180, 80, 0.2);
+  --diff-del-bg: rgba(200, 80, 80, 0.08);
+  --diff-del-line: rgba(200, 80, 80, 0.18);
+  --graph-main: #ED5001;
+  --graph-branch1: #2563EB;
+  --graph-branch2: #9333EA;
+  --graph-branch3: #16A34A;
+  --graph-branch4: #D97706;
+}
+
+/* ======================== GLOBAL STYLES ======================== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  transition: background var(--transition-base), color var(--transition-base);
+}
+
+code,
+pre,
+.mono {
+  font-family: var(--font-mono);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
