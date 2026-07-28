@@ -3,7 +3,10 @@
 // Derives the app version from git tags.
 //
 // Tagged commit  (e.g. v1.2.3)  → "1.2.3"
-// Other commit                  → "0.0.0-dev.{short_sha}"
+// Other commit                  → "0.0.0-{commit_count}"
+//
+// The MSI bundle target only accepts numeric pre-release identifiers.
+// Use the total number of commits for the dev build number.
 //
 // Patches version in:
 //   - src-tauri/tauri.conf.json
@@ -22,11 +25,12 @@ function gitVersion() {
     // Strip leading "v" if present.
     return desc.replace(/^v/, "");
   } catch {
-    // No tag on this commit. Use a dev version.
-    const sha = execSync("git rev-parse --short HEAD", {
+    // No tag on this commit. Use a dev version with a numeric pre-release.
+    // MSI requires the pre-release part to contain only digits and be <= 65535.
+    const count = execSync("git rev-list --count HEAD", {
       encoding: "utf-8",
     }).trim();
-    return `0.0.0-dev.${sha}`;
+    return `0.0.0-${count}`;
   }
 }
 
