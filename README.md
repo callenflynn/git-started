@@ -1,5 +1,7 @@
 # git-started
 
+[Documentation](https://cstaks-wiki.callen.page/share/cszvqiq9s6/p/home-F8XEBpCwqM)
+
 A fast, native Git GUI built with [Tauri](https://tauri.app), React, and Rust.
 
 ![Theme: Dark](https://img.shields.io/badge/theme-dark-1E1E1E)
