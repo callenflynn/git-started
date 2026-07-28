@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 
 export function Toolbar() {
-  const repoPath = useRepoStore((s) => s.repoPath);
   const setRepoPath = useRepoStore((s) => s.setRepoPath);
   const branches = useBranches();
   const pushMut = usePush();

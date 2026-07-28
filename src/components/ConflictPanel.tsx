@@ -1,6 +1,6 @@
 import { useConflicts, useResolveConflict } from "../hooks/useGit";
 import type { ConflictFile } from "../lib/types";
-import { AlertTriangle, Check, X } from "lucide-react";
+import { AlertTriangle, Check } from "lucide-react";
 
 function ConflictItem({ conflict }: { conflict: ConflictFile }) {
   const resolveMut = useResolveConflict();

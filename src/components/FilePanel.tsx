@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { useRepoStore } from "../stores/repo-store";
 import {
   useRepoStatus,
@@ -11,7 +11,6 @@ import type { FileStatus } from "../lib/types";
 import {
   Plus,
   Minus,
-  FileText,
   FilePlus,
   FileMinus,
   FileEdit,
@@ -102,7 +101,6 @@ function Section({ title, files, onAction, actionIcon, onDrop }: {
   onDrop?: (filePath: string) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
-  const stageMut = useStageFile();
 
   if (files.length === 0 && !onDrop) return null;
 

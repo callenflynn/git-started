@@ -1,10 +1,8 @@
-import { useRepoStore } from "../stores/repo-store";
 import {
   useBranches,
   useCheckout,
   useCreateBranch,
   useDeleteBranch,
-  useRemotes,
   useStashes,
   useStashPop,
   useTags,
@@ -26,7 +24,6 @@ import {
   RefreshCw,
   Key,
   CheckCircle,
-  XCircle,
 } from "lucide-react";
 
 function SectionHeader({ title, children }: { title: string; children?: React.ReactNode }) {
@@ -95,10 +92,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onRebase }: SidebarProps) {
-  const repoPath = useRepoStore((s) => s.repoPath);
-  const selectFile = useRepoStore((s) => s.selectFile);
   const branches = useBranches();
-  const remotes = useRemotes();
   const stashes = useStashes();
   const tags = useTags();
   const submodules = useSubmodules();
