@@ -153,12 +153,11 @@ fn build_repo_info(repo: &Repository, path: &str) -> Result<RepoInfo, String> {
         .unwrap_or("")
         .to_string();
 
-    let status_opts = git2::StatusOptions::new();
-    let is_dirty = repo
+    let mut status_opts = git2::StatusOptions::new();
+    let is_dirty = !repo
         .statuses(Some(&mut status_opts))
         .map_err(|e| e.to_string())?
-        .len()
-        > 0;
+        .is_empty();
 
     Ok(RepoInfo {
         path: path.to_string(),
@@ -264,7 +263,7 @@ fn get_diff(repo_path: String, file_path: String, staged: bool) -> Result<String
 
     let diff = if staged {
         let head = repo.head().and_then(|r| r.peel_to_commit()).ok();
-        let index = repo.index().map_err(|e| e.to_string())?;
+        let mut index = repo.index().map_err(|e| e.to_string())?;
         let tree = index
             .write_tree()
             .ok()
@@ -312,18 +311,15 @@ fn get_log(repo_path: String, max: Option<usize>) -> Result<Vec<CommitInfo>, Str
     // Collect all branch names mapped to their tip oid.
     let mut branch_map: std::collections::HashMap<String, git2::Oid> =
         std::collections::HashMap::new();
-
     if let Ok(branches) = repo.branches(Some(git2::BranchType::Local)) {
-        for branch_result in branches {
-            if let Ok((branch, _bt)) = branch_result {
-                if let Ok(ref_name) = branch.get().name() {
-                    if let Ok(oid) = branch.get().resolve().map(|r| r.target()) {
-                        let short = ref_name
-                            .strip_prefix("refs/heads/")
-                            .unwrap_or(ref_name)
-                            .to_string();
-                        branch_map.insert(short, oid.unwrap());
-                    }
+        for (branch, _bt) in branches.flatten() {
+            if let Ok(ref_name) = branch.get().name() {
+                if let Ok(oid) = branch.get().resolve().map(|r| r.target()) {
+                    let short = ref_name
+                        .strip_prefix("refs/heads/")
+                        .unwrap_or(ref_name)
+                        .to_string();
+                    branch_map.insert(short, oid.unwrap());
                 }
             }
         }
@@ -409,7 +405,7 @@ fn do_commit(
     }
 
     // Unsigned commit via libgit2.
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let sig = repo.signature().map_err(|e| e.to_string())?;
     let mut index = repo.index().map_err(|e| e.to_string())?;
     index.write_tree().map_err(|e| e.to_string())?;
@@ -418,9 +414,9 @@ fn do_commit(
     let head_commit = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
 
     if amend {
-        if let Some(mut old) = head_commit {
+        if let Some(old) = head_commit {
             let oid = old
-                .amend(Some("HEAD"), Some(&sig), Some(&sig), Some(&message), Some(&tree), None)
+                .amend(Some("HEAD"), Some(&sig), Some(&sig), None, Some(&message), Some(&tree))
                 .map_err(|e| e.to_string())?;
             return Ok(oid_to_hex(oid));
         }
@@ -491,7 +487,7 @@ fn get_signing_info(repo_path: String) -> Result<SigningInfo, String> {
 /// Stage a single file by path.
 #[tauri::command]
 fn stage_file(repo_path: String, file_path: String) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let mut index = repo.index().map_err(|e| e.to_string())?;
     index
         .add_path(Path::new(&file_path))
@@ -503,9 +499,9 @@ fn stage_file(repo_path: String, file_path: String) -> Result<(), String> {
 /// Unstage a single file by restoring it from HEAD.
 #[tauri::command]
 fn unstage_file(repo_path: String, file_path: String) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let head = repo.head().and_then(|h| h.peel(git2::ObjectType::Tree)).ok();
-    repo.reset_default(head.as_ref(), &[Path::new(&file_path)])
+    repo.reset_default(head.as_ref(), [Path::new(&file_path)])
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -524,7 +520,7 @@ fn stage_all(repo_path: String) -> Result<(), String> {
 /// Unstage all files (soft reset to HEAD).
 #[tauri::command]
 fn unstage_all(repo_path: String) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let head = repo.head().and_then(|h| h.peel(git2::ObjectType::Tree)).ok();
     let empty_paths: Vec<&Path> = Vec::new();
     repo.reset_default(head.as_ref(), empty_paths).map_err(|e| e.to_string())?;
@@ -542,36 +538,34 @@ fn get_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
     let mut result = Vec::new();
 
     if let Ok(branches) = repo.branches(None) {
-        for branch_result in branches {
-            if let Ok((branch, bt)) = branch_result {
-                let refname = branch.get().name().unwrap_or("");
-                let name = refname
-                    .strip_prefix("refs/heads/")
-                    .or_else(|| refname.strip_prefix("refs/remotes/"))
-                    .unwrap_or(refname)
-                    .to_string();
+        for (branch, bt) in branches.flatten() {
+            let refname = branch.get().name().unwrap_or("");
+            let name = refname
+                .strip_prefix("refs/heads/")
+                .or_else(|| refname.strip_prefix("refs/remotes/"))
+                .unwrap_or(refname)
+                .to_string();
 
-                let is_head = branch.get().target() == head_oid && bt == git2::BranchType::Local;
-                let is_remote = bt == git2::BranchType::Remote;
+            let is_head = branch.get().target() == head_oid && bt == git2::BranchType::Local;
+            let is_remote = bt == git2::BranchType::Remote;
 
-                let upstream = branch.upstream().ok().and_then(|u| {
-                    u.get()
-                        .name()
-                        .ok()
-                        .map(|n| {
-                            n.strip_prefix("refs/remotes/")
-                                .unwrap_or(n)
-                                .to_string()
-                        })
-                });
+            let upstream = branch.upstream().ok().and_then(|u| {
+                u.get()
+                    .name()
+                    .ok()
+                    .map(|n| {
+                        n.strip_prefix("refs/remotes/")
+                            .unwrap_or(n)
+                            .to_string()
+                    })
+            });
 
-                result.push(BranchInfo {
-                    name,
-                    is_head,
-                    is_remote,
-                    upstream,
-                });
-            }
+            result.push(BranchInfo {
+                name,
+                is_head,
+                is_remote,
+                upstream,
+            });
         }
     }
 
@@ -588,7 +582,7 @@ fn get_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
 /// Checkout (switch to) a branch or commit.
 #[tauri::command]
 fn checkout_branch(repo_path: String, target: String) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
 
     // Try as a branch first.
     if let Ok(reference) = repo.find_branch(&target, git2::BranchType::Local) {
@@ -663,7 +657,7 @@ fn do_push(repo_path: String, remote: String, branch: String) -> Result<(), Stri
 /// Pull from a remote branch.
 #[tauri::command]
 fn do_pull(repo_path: String, remote: String, branch: String) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let remote_name = remote.clone();
 
     // Fetch first.
@@ -725,7 +719,7 @@ fn do_pull(repo_path: String, remote: String, branch: String) -> Result<(), Stri
 /// Fetch from a remote.
 #[tauri::command]
 fn do_fetch(repo_path: String, remote: String) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let mut remote = repo.find_remote(&remote).map_err(|e| e.to_string())?;
     remote.fetch::<&str>(&[], None, None).map_err(|e| e.to_string())?;
     Ok(())
@@ -784,7 +778,7 @@ fn get_stashes(repo_path: String) -> Result<Vec<StashInfo>, String> {
         let message = msg.to_string();
         // Extract branch name from stash message (e.g. "On branch: message").
         let branch = message
-            .splitn(2, ':')
+            .split(':')
             .next()
             .unwrap_or("")
             .strip_prefix("On ")
@@ -816,7 +810,7 @@ fn get_tags(repo_path: String) -> Result<Vec<TagInfo>, String> {
         let oid_hex = oid_to_hex(oid);
         let message = repo.find_tag(oid)
             .ok()
-            .and_then(|t| t.message().ok().map(String::from));
+            .and_then(|t| t.message().ok().flatten().map(String::from));
         result.push(TagInfo {
             name: name_str,
             oid: oid_hex,
@@ -1052,29 +1046,27 @@ fn get_conflicts(repo_path: String) -> Result<Vec<ConflictFile>, String> {
 
     let mut conflicts = Vec::new();
     if let Ok(conflict_iter) = index.conflicts() {
-        for conflict_result in conflict_iter {
-            if let Ok(entry) = conflict_result {
-                let path_str = entry
-                    .ancestor
-                    .as_ref()
-                    .or(entry.our.as_ref())
-                    .or(entry.their.as_ref())
-                    .map(|e| String::from_utf8_lossy(&e.path).to_string())
-                    .unwrap_or_default();
+        for entry in conflict_iter.flatten() {
+            let path_str = entry
+                .ancestor
+                .as_ref()
+                .or(entry.our.as_ref())
+                .or(entry.their.as_ref())
+                .map(|e| String::from_utf8_lossy(&e.path).to_string())
+                .unwrap_or_default();
 
-                // Read conflict markers from the file.
-                let full_path = Path::new(&repo_path).join(&path_str);
-                let content = std::fs::read_to_string(&full_path).unwrap_or_default();
+            // Read conflict markers from the file.
+            let full_path = Path::new(&repo_path).join(&path_str);
+            let content = std::fs::read_to_string(&full_path).unwrap_or_default();
 
-                let (ancestor, ours, theirs) = parse_conflict_markers(&content);
+            let (ancestor, ours, theirs) = parse_conflict_markers(&content);
 
-                conflicts.push(ConflictFile {
-                    path: path_str,
-                    ancestor,
-                    ours,
-                    theirs,
-                });
-            }
+            conflicts.push(ConflictFile {
+                path: path_str,
+                ancestor,
+                ours,
+                theirs,
+            });
         }
     }
 
@@ -1125,7 +1117,7 @@ fn resolve_conflict(
     file_path: String,
     side: String,
 ) -> Result<(), String> {
-    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
 
     let full_path = Path::new(&file_path);
     let content = std::fs::read_to_string(full_path).map_err(|e| e.to_string())?;
@@ -1217,7 +1209,7 @@ fn get_submodules(repo_path: String) -> Result<Vec<SubmoduleInfo>, String> {
             let url = sm.url().ok().flatten().map(String::from).unwrap_or_default();
             let head_oid = sm
                 .head_id()
-                .map(|oid| oid_to_hex(oid))
+                .map(oid_to_hex)
                 .unwrap_or_default();
 
             // Determine status.
