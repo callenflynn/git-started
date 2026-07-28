@@ -190,7 +190,7 @@ fn get_status(repo_path: String) -> Result<Vec<FileStatus>, String> {
 
         let s = entry.status();
 
-        // Index (staged) entries.
+        // Staged files (files ready to be committed).
         if s.intersects(
             git2::Status::INDEX_NEW
                 | git2::Status::INDEX_MODIFIED
@@ -216,7 +216,7 @@ fn get_status(repo_path: String) -> Result<Vec<FileStatus>, String> {
             });
         }
 
-        // Worktree (unstaged) entries.
+        // Unstaged files in the working directory (modified files not added to staging).
         if s.intersects(
             git2::Status::WT_MODIFIED
                 | git2::Status::WT_DELETED
@@ -239,7 +239,7 @@ fn get_status(repo_path: String) -> Result<Vec<FileStatus>, String> {
             });
         }
 
-        // Untracked files.
+        // New files that Git does not track yet.
         if s.contains(git2::Status::WT_NEW) {
             result.push(FileStatus {
                 path: path_str,
@@ -253,7 +253,8 @@ fn get_status(repo_path: String) -> Result<Vec<FileStatus>, String> {
     Ok(result)
 }
 
-/// Get the diff for a single file. If staged is true, compare index vs HEAD.
+/// Get the text differences for one file.
+    /// If `staged` is true, compare the changes in the staging area against the latest commit (HEAD).
 #[tauri::command]
 fn get_diff(repo_path: String, file_path: String, staged: bool) -> Result<String, String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
@@ -372,8 +373,8 @@ fn get_log(repo_path: String, max: Option<usize>) -> Result<Vec<CommitInfo>, Str
     Ok(result)
 }
 
-/// Create a new commit from staged files.
-/// When sign is true, uses `git commit -S` for GPG/SSH signing.
+/// Create a new commit with the staged files.
+/// If `sign` is true, the program runs the `git commit -S` command line tool to add a GPG or SSH signature.
 #[tauri::command]
 fn do_commit(
     repo_path: String,
@@ -382,8 +383,8 @@ fn do_commit(
     sign: bool,
 ) -> Result<String, String> {
     if sign {
-        // Shell out to `git commit -S` for signing support.
-        // libgit2 does not have native signing callbacks.
+        // Run the command line tool `git commit -S` for signatures.
+        // The libgit2 library does not include built-in signing functions.
         let mut args = vec!["commit", "-S", "--allow-empty", "-m", &message];
         if amend {
             args.push("--amend");
@@ -496,7 +497,7 @@ fn stage_file(repo_path: String, file_path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Unstage a single file by restoring it from HEAD.
+/// Remove a single file from the staging area. This cancels the staged change using data from the latest commit (HEAD).
 #[tauri::command]
 fn unstage_file(repo_path: String, file_path: String) -> Result<(), String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
@@ -517,7 +518,7 @@ fn stage_all(repo_path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Unstage all files (soft reset to HEAD).
+/// Remove all files from the staging area. This keeps your file modifications but resets the staging area state to match the latest commit (HEAD).
 #[tauri::command]
 fn unstage_all(repo_path: String) -> Result<(), String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
@@ -584,7 +585,7 @@ fn get_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
 fn checkout_branch(repo_path: String, target: String) -> Result<(), String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
 
-    // Try as a branch first.
+    // First, try to find a local branch with the target name.
     if let Ok(reference) = repo.find_branch(&target, git2::BranchType::Local) {
         let obj = reference.get().peel(git2::ObjectType::Any).map_err(|e| e.to_string())?;
         repo.checkout_tree(&obj, None)
@@ -594,7 +595,7 @@ fn checkout_branch(repo_path: String, target: String) -> Result<(), String> {
         return Ok(());
     }
 
-    // Try as a remote branch — create a local tracking branch.
+    // Next, try to find a remote branch. If found, create a local branch that follows the remote branch.
     let remote_ref = format!("refs/remotes/origin/{}", target);
     if let Ok(reference) = repo.find_reference(&remote_ref) {
         let commit = reference.peel_to_commit().map_err(|e| e.to_string())?;
@@ -609,7 +610,7 @@ fn checkout_branch(repo_path: String, target: String) -> Result<(), String> {
         return Ok(());
     }
 
-    // Try as an OID.
+    // Finally, try to match the target to a specific commit hash (Object ID).
     if let Ok(oid) = git2::Oid::from_str(&target) {
         let obj = repo.find_object(oid, None).map_err(|e| e.to_string())?;
         repo.checkout_tree(&obj, None).map_err(|e| e.to_string())?;
@@ -919,10 +920,10 @@ fn get_rebase_status(repo_path: String) -> Result<RebaseStatus, String> {
     })
 }
 
-/// Start an interactive rebase. Each commit can have an operation:
-/// pick, squash, fixup, reword, edit, drop.
-/// This shells out to `git rebase -i` since libgit2's rebase API
-/// does not support custom commit selection.
+/// Start an interactive rebase. You can specify an action for each commit.
+/// The actions are: pick, squash, fixup, reword, edit, or drop.
+/// This uses the command line interface (`git rebase -i`) because the libgit2 library
+/// does not let you assign custom actions to commits.
 #[tauri::command]
 fn start_rebase(
     repo_path: String,
