@@ -1,0 +1,19 @@
+# Normalize all detected text files to LF line endings in the index and working tree.
+* text=auto eol=lf
+
+# Windows-only scripts should keep CRLF line endings.
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binary files — do not treat as text or attempt line-ending conversion.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.icns      binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.eot       binary
