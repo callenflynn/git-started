@@ -7,6 +7,7 @@ import { FilePanel } from "./components/FilePanel";
 import { DiffViewer } from "./components/DiffViewer";
 import { CommitDialog } from "./components/CommitDialog";
 import { RebasePanel } from "./components/RebasePanel";
+import { ConflictPanel } from "./components/ConflictPanel";
 
 export default function App() {
   const repoPath = useRepoStore((s) => s.repoPath);
@@ -31,6 +32,9 @@ export default function App() {
             />
           ) : (
             <>
+              {/* Merge conflicts banner */}
+              <ConflictPanel />
+
               {/* Commit graph fills the top portion */}
               <CommitGraph />
 
