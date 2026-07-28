@@ -16,3 +16,4 @@ tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
 git2 = { version = "0.21", features = [] }
+dirs = "6"

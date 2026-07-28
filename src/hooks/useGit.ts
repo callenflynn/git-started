@@ -362,3 +362,63 @@ export function useSearchCommits(query: string) {
     enabled: !!repoPath && query.trim().length > 0,
   });
 }
+
+// ---- Auth hooks ----
+
+export function useSshKeys() {
+  return useQuery({
+    queryKey: ["ssh-keys"],
+    queryFn: () => git.getSshKeys(),
+  });
+}
+
+export function useSshAgentStatus() {
+  return useQuery({
+    queryKey: ["ssh-agent"],
+    queryFn: () => git.getSshAgentStatus(),
+  });
+}
+
+export function useGenerateSshKey() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (comment: string) => git.generateSshKey(comment),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ssh-keys"] }),
+  });
+}
+
+export function useTestSshConnection() {
+  return useMutation({
+    mutationFn: (host: string) => git.testSshConnection(host),
+  });
+}
+
+export function useSaveCredential() {
+  return useMutation({
+    mutationFn: ({
+      protocol,
+      host,
+      username,
+      password,
+    }: {
+      protocol: string;
+      host: string;
+      username: string;
+      password: string;
+    }) => git.saveCredential(protocol, host, username, password),
+  });
+}
+
+export function useRemoveCredential() {
+  return useMutation({
+    mutationFn: ({ protocol, host }: { protocol: string; host: string }) =>
+      git.removeCredential(protocol, host),
+  });
+}
+
+export function useGitConfig(key: string) {
+  return useQuery({
+    queryKey: ["git-config", key],
+    queryFn: () => git.getGitConfig(key),
+  });
+}

@@ -13,6 +13,9 @@ import type {
   ConflictFile,
   SubmoduleInfo,
   CredentialInfo,
+  SshKeyInfo,
+  SshAgentStatus,
+  SshTestResult,
 } from "./types";
 
 // ---- Repo operations ----
@@ -202,4 +205,41 @@ export async function submoduleUpdate(repoPath: string, name: string): Promise<v
 
 export async function getCredentialInfo(repoPath: string): Promise<CredentialInfo> {
   return invoke<CredentialInfo>("get_credential_info", { repoPath });
+}
+
+// ---- SSH keys ----
+
+export async function getSshKeys(): Promise<SshKeyInfo[]> {
+  return invoke<SshKeyInfo[]>("get_ssh_keys");
+}
+
+export async function generateSshKey(comment: string): Promise<string> {
+  return invoke<string>("generate_ssh_key", { comment });
+}
+
+export async function getSshAgentStatus(): Promise<SshAgentStatus> {
+  return invoke<SshAgentStatus>("get_ssh_agent_status");
+}
+
+export async function testSshConnection(host: string): Promise<SshTestResult> {
+  return invoke<SshTestResult>("test_ssh_connection", { host });
+}
+
+// ---- Credential save/remove ----
+
+export async function saveCredential(
+  protocol: string,
+  host: string,
+  username: string,
+  password: string
+): Promise<void> {
+  return invoke("save_credential", { protocol, host, username, password });
+}
+
+export async function removeCredential(protocol: string, host: string): Promise<void> {
+  return invoke("remove_credential", { protocol, host });
+}
+
+export async function getGitConfig(key: string, repoPath?: string): Promise<string | null> {
+  return invoke<string | null>("get_git_config", { key, repoPath: repoPath ?? null });
 }

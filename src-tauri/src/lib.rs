@@ -1,6 +1,5 @@
 use git2::{Repository, Sort};
 use serde::Serialize;
-use std::path::Path;
 use std::process::Command;
 
 // ────────────────────── Data types sent to the frontend ──────────────────────
@@ -1305,6 +1304,260 @@ fn get_credential_info(repo_path: String) -> Result<CredentialInfo, String> {
     })
 }
 
+// ────────────────────── Auth commands ──────────────────────
+
+#[derive(Serialize)]
+pub struct SshKeyInfo {
+    path: String,
+    filename: String,
+    public_key: String,
+    fingerprint: String,
+    exists: bool,
+}
+
+#[derive(Serialize)]
+pub struct SshAgentStatus {
+    has_agent: bool,
+    loaded_keys: Vec<String>,
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SshTestResult {
+    success: bool,
+    message: String,
+}
+
+/// List all public keys in ~/.ssh/.
+#[tauri::command]
+fn get_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let ssh_dir = home.join(".ssh");
+
+    if !ssh_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut keys = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&ssh_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".pub") {
+                let pub_path = entry.path();
+                let private_path = ssh_dir.join(name.trim_end_matches(".pub"));
+
+                let public_key = std::fs::read_to_string(&pub_path).unwrap_or_default();
+                let fingerprint = public_key
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("")
+                    .to_string();
+
+                keys.push(SshKeyInfo {
+                    path: private_path.to_string_lossy().to_string(),
+                    filename: name.trim_end_matches(".pub").to_string(),
+                    public_key: public_key.trim().to_string(),
+                    fingerprint,
+                    exists: private_path.exists(),
+                });
+            }
+        }
+    }
+
+    Ok(keys)
+}
+
+/// Generate a new SSH keypair via ssh-keygen.
+#[tauri::command]
+fn generate_ssh_key(comment: String) -> Result<String, String> {
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let ssh_dir = home.join(".ssh");
+
+    if !ssh_dir.exists() {
+        std::fs::create_dir_all(&ssh_dir).map_err(|e| e.to_string())?;
+    }
+
+    // Check if a key already exists.
+    let key_path = ssh_dir.join("id_ed25519");
+    if key_path.exists() {
+        return Err("A key already exists at ~/.ssh/id_ed25519. Delete it first or choose a different name.".to_string());
+    }
+
+    let output = Command::new("ssh-keygen")
+        .args([
+            "-t", "ed25519",
+            "-C", &comment,
+            "-f", &key_path.to_string_lossy(),
+            "-N", "",  // empty passphrase
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run ssh-keygen: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ssh-keygen failed: {}", stderr));
+    }
+
+    // Read the public key.
+    let pub_key = std::fs::read_to_string(key_path.with_extension("pub"))
+        .map_err(|e| e.to_string())?;
+
+    Ok(pub_key.trim().to_string())
+}
+
+/// Check if ssh-agent is running and which keys are loaded.
+#[tauri::command]
+fn get_ssh_agent_status() -> Result<SshAgentStatus, String> {
+    // Check if agent is running.
+    let output = Command::new("ssh-add")
+        .args(["-l"])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            let keys: Vec<String> = stdout
+                .lines()
+                .filter_map(|line| {
+                    // Lines look like: "2048 SHA256:xxxx /path/to/key (RSA)"
+                    line.split_whitespace().last().map(|s| s.to_string())
+                })
+                .filter(|s| !s.starts_with('('))
+                .collect();
+            Ok(SshAgentStatus {
+                has_agent: true,
+                loaded_keys: keys,
+                error: None,
+            })
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            Ok(SshAgentStatus {
+                has_agent: false,
+                loaded_keys: vec![],
+                error: Some(stderr.trim().to_string()),
+            })
+        }
+        Err(e) => Ok(SshAgentStatus {
+            has_agent: false,
+            loaded_keys: vec![],
+            error: Some(format!("Could not run ssh-add: {}", e)),
+        }),
+    }
+}
+
+/// Test SSH connection to a given host (e.g. "github.com").
+#[tauri::command]
+fn test_ssh_connection(host: String) -> Result<SshTestResult, String> {
+    let output = Command::new("ssh")
+        .args([
+            "-T",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "ConnectTimeout=5",
+            &format!("git@{}", host),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run ssh: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}{}", stdout, stderr);
+    let lower = combined.to_lowercase();
+    let success = lower.contains("successfully authenticated")
+        || lower.contains("welcome")
+        || lower.contains("you've successfully")
+        || lower.contains("logged in as");
+
+    Ok(SshTestResult {
+        success,
+        message: combined.trim().to_string(),
+    })
+}
+
+/// Save a personal access token to the credential helper.
+#[tauri::command]
+fn save_credential(protocol: String, host: String, username: String, password: String) -> Result<(), String> {
+    let input = format!(
+        "protocol={}\nhost={}\nusername={}\npassword={}\n",
+        protocol, host, username, password
+    );
+
+    let output = Command::new("git")
+        .args(["credential", "approve"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run git credential: {}", e))?;
+
+    // Write to stdin and close.
+    if let Some(mut stdin) = output.stdin {
+        use std::io::Write;
+        stdin.write_all(input.as_bytes()).map_err(|e| e.to_string())?;
+    }
+
+    let result = output.wait_with_output().map_err(|e| e.to_string())?;
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        return Err(format!("git credential approve failed: {}", stderr));
+    }
+
+    Ok(())
+}
+
+/// Remove saved credentials for a host.
+#[tauri::command]
+fn remove_credential(protocol: String, host: String) -> Result<(), String> {
+    let input = format!("protocol={}\nhost={}\n", protocol, host);
+
+    let output = Command::new("git")
+        .args(["credential", "reject"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to run git credential: {}", e))?;
+
+    if let Some(mut stdin) = output.stdin {
+        use std::io::Write;
+        stdin.write_all(input.as_bytes()).map_err(|e| e.to_string())?;
+    }
+
+    let result = output.wait_with_output().map_err(|e| e.to_string())?;
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        return Err(format!("git credential reject failed: {}", stderr));
+    }
+
+    Ok(())
+}
+
+/// Read a git config value (global or local).
+#[tauri::command]
+fn get_git_config(key: String, repo_path: Option<String>) -> Result<Option<String>, String> {
+    let mut args = vec!["config".to_string()];
+    if let Some(rp) = &repo_path {
+        args.push("--local".to_string());
+        args.push("-f".to_string());
+        args.push(format!("{}/.git/config", rp));
+    } else {
+        args.push("--global".to_string());
+    }
+    args.push(key.clone());
+
+    let output = Command::new("git")
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to run git config: {}", e))?;
+
+    if output.status.success() {
+        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(Some(val))
+    } else {
+        Ok(None)
+    }
+}
+
 // ────────────────────── Entry point ──────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1349,6 +1602,13 @@ pub fn run() {
             get_submodules,
             submodule_update,
             get_credential_info,
+            get_ssh_keys,
+            generate_ssh_key,
+            get_ssh_agent_status,
+            test_ssh_connection,
+            save_credential,
+            remove_credential,
+            get_git_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

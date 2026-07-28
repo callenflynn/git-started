@@ -91,3 +91,22 @@ export interface CredentialInfo {
   storage: string;
   configured: boolean;
 }
+
+export interface SshKeyInfo {
+  path: string;
+  filename: string;
+  public_key: string;
+  fingerprint: string;
+  exists: boolean;
+}
+
+export interface SshAgentStatus {
+  has_agent: boolean;
+  loaded_keys: string[];
+  error: string | null;
+}
+
+export interface SshTestResult {
+  success: boolean;
+  message: string;
+}
