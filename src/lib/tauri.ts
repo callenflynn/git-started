@@ -7,6 +7,12 @@ import type {
   StashInfo,
   RemoteInfo,
   TagInfo,
+  SigningInfo,
+  RebaseCommit,
+  RebaseStatus,
+  ConflictFile,
+  SubmoduleInfo,
+  CredentialInfo,
 } from "./types";
 
 // ---- Repo operations ----
@@ -39,8 +45,25 @@ export async function getLog(repoPath: string, max?: number): Promise<CommitInfo
   return invoke<CommitInfo[]>("get_log", { repoPath, max: max ?? 200 });
 }
 
-export async function commit(repoPath: string, message: string, amend: boolean): Promise<string> {
-  return invoke<string>("do_commit", { repoPath, message, amend });
+export async function commit(
+  repoPath: string,
+  message: string,
+  amend: boolean,
+  sign: boolean
+): Promise<string> {
+  return invoke<string>("do_commit", { repoPath, message, amend, sign });
+}
+
+export async function getSigningInfo(repoPath: string): Promise<SigningInfo> {
+  return invoke<SigningInfo>("get_signing_info", { repoPath });
+}
+
+export async function searchCommits(
+  repoPath: string,
+  query: string,
+  max?: number
+): Promise<CommitInfo[]> {
+  return invoke<CommitInfo[]>("search_commits", { repoPath, query, max });
 }
 
 // ---- Staging ----
@@ -119,4 +142,64 @@ export async function getTags(repoPath: string): Promise<TagInfo[]> {
 
 export async function createTag(repoPath: string, name: string): Promise<void> {
   return invoke("create_tag", { repoPath, name });
+}
+
+// ---- Rebase ----
+
+export async function getRebaseCommits(
+  repoPath: string,
+  branch: string,
+  base: string
+): Promise<RebaseCommit[]> {
+  return invoke<RebaseCommit[]>("get_rebase_commits", { repoPath, branch, base });
+}
+
+export async function getRebaseStatus(repoPath: string): Promise<RebaseStatus> {
+  return invoke<RebaseStatus>("get_rebase_status", { repoPath });
+}
+
+export async function startRebase(
+  repoPath: string,
+  onto: string,
+  operations: RebaseCommit[]
+): Promise<void> {
+  return invoke("start_rebase", { repoPath, onto, operations });
+}
+
+export async function rebaseContinue(repoPath: string): Promise<void> {
+  return invoke("rebase_continue", { repoPath });
+}
+
+export async function rebaseAbort(repoPath: string): Promise<void> {
+  return invoke("rebase_abort", { repoPath });
+}
+
+// ---- Merge conflicts ----
+
+export async function getConflicts(repoPath: string): Promise<ConflictFile[]> {
+  return invoke<ConflictFile[]>("get_conflicts", { repoPath });
+}
+
+export async function resolveConflict(
+  repoPath: string,
+  filePath: string,
+  side: string
+): Promise<void> {
+  return invoke("resolve_conflict", { repoPath, filePath, side });
+}
+
+// ---- Submodules ----
+
+export async function getSubmodules(repoPath: string): Promise<SubmoduleInfo[]> {
+  return invoke<SubmoduleInfo[]>("get_submodules", { repoPath });
+}
+
+export async function submoduleUpdate(repoPath: string, name: string): Promise<void> {
+  return invoke("submodule_update", { repoPath, name });
+}
+
+// ---- Credential helper ----
+
+export async function getCredentialInfo(repoPath: string): Promise<CredentialInfo> {
+  return invoke<CredentialInfo>("get_credential_info", { repoPath });
 }

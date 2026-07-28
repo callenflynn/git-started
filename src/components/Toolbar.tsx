@@ -5,6 +5,9 @@ import {
   usePull,
   useFetch,
   useStash,
+  useRebaseStatus,
+  useRebaseContinue,
+  useRebaseAbort,
 } from "../hooks/useGit";
 import { ThemeToggle } from "./ThemeToggle";
 import {
@@ -13,6 +16,9 @@ import {
   RefreshCw,
   Archive,
   FolderOpen,
+  AlertTriangle,
+  Play,
+  X,
 } from "lucide-react";
 
 export function Toolbar() {
@@ -23,6 +29,9 @@ export function Toolbar() {
   const pullMut = usePull();
   const fetchMut = useFetch();
   const stashMut = useStash();
+  const rebaseStatus = useRebaseStatus();
+  const rebaseContinueMut = useRebaseContinue();
+  const rebaseAbortMut = useRebaseAbort();
 
   const currentBranch = branches.data?.find((b) => b.is_head);
 
@@ -78,6 +87,31 @@ export function Toolbar() {
           <span style={{ fontFamily: "var(--font-mono)" }}>
             {currentBranch.name}
           </span>
+        </span>
+      )}
+
+      {/* Rebase in-progress indicator */}
+      {rebaseStatus.data?.in_progress && (
+        <span
+          className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium"
+          style={{ background: "#F59E0B", color: "#1E1E1E" }}
+        >
+          <AlertTriangle size={12} />
+          Rebase in progress
+          <button
+            className="ml-1 p-0.5 rounded hover:bg-black/20"
+            onClick={() => rebaseContinueMut.mutate()}
+            title="Continue rebase"
+          >
+            <Play size={10} />
+          </button>
+          <button
+            className="p-0.5 rounded hover:bg-black/20"
+            onClick={() => rebaseAbortMut.mutate()}
+            title="Abort rebase"
+          >
+            <X size={10} />
+          </button>
         </span>
       )}
 

@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import { useRepoStore } from "../stores/repo-store";
 import {
   useRepoStatus,
@@ -45,12 +46,21 @@ function FileItem({ file }: { file: FileStatus }) {
 
   const isSelected = selectedFile === file.path && selectedStaged === file.staged;
 
+  // Drag-to-stage: drag unstaged files, drop target is the staged section.
+  function onDragStart(e: React.DragEvent) {
+    if (file.staged) return;
+    e.dataTransfer.setData("text/plain", file.path);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
   return (
     <div
       className="flex items-center gap-2 px-3 py-1 cursor-pointer group transition-colors"
       style={{
         background: isSelected ? "var(--bg-hover)" : "transparent",
       }}
+      draggable={!file.staged}
+      onDragStart={onDragStart}
       onClick={() => selectFile(file.path, file.staged)}
     >
       {statusIcon(file.status)}
@@ -84,19 +94,49 @@ function FileItem({ file }: { file: FileStatus }) {
   );
 }
 
-function Section({ title, files, onAction, actionIcon }: {
+function Section({ title, files, onAction, actionIcon, onDrop }: {
   title: string;
   files: FileStatus[];
   onAction?: () => void;
   actionIcon?: React.ReactNode;
+  onDrop?: (filePath: string) => void;
 }) {
-  if (files.length === 0) return null;
+  const [dragOver, setDragOver] = useState(false);
+  const stageMut = useStageFile();
+
+  if (files.length === 0 && !onDrop) return null;
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const filePath = e.dataTransfer.getData("text/plain");
+    if (filePath && onDrop) {
+      onDrop(filePath);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    if (onDrop) setDragOver(true);
+  }
+
+  function handleDragLeave() {
+    setDragOver(false);
+  }
 
   return (
-    <div>
+    <div
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      style={{ background: dragOver ? "var(--accent)/20" : "transparent" }}
+    >
       <div
         className="flex items-center justify-between px-3 py-1.5"
-        style={{ borderBottom: "1px solid var(--border)" }}
+        style={{
+          borderBottom: "1px solid var(--border)",
+          background: dragOver ? "rgba(237,80,1,0.08)" : "transparent",
+        }}
       >
         <span className="text-xs font-semibold uppercase tracking-wider"
               style={{ color: "var(--text-muted)" }}>
@@ -115,6 +155,12 @@ function Section({ title, files, onAction, actionIcon }: {
       {files.map((f) => (
         <FileItem key={f.path + String(f.staged)} file={f} />
       ))}
+      {files.length === 0 && onDrop && (
+        <div className="px-3 py-3 text-xs text-center"
+             style={{ color: "var(--text-muted)" }}>
+          Drop files here to stage
+        </div>
+      )}
     </div>
   );
 }
@@ -130,6 +176,7 @@ export function FilePanel() {
 
   const stageAllMut = useStageAll();
   const unstageAllMut = useUnstageAll();
+  const stageMut = useStageFile();
 
   if (status.isLoading) {
     return (
@@ -147,6 +194,7 @@ export function FilePanel() {
         files={staged}
         onAction={() => unstageAllMut.mutate()}
         actionIcon={<Undo2 size={13} style={{ color: "var(--text-muted)" }} />}
+        onDrop={(filePath) => stageMut.mutate(filePath)}
       />
       <Section
         title="Modified"

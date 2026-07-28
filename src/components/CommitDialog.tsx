@@ -1,26 +1,30 @@
 import { useState } from "react";
-import { useCommit, useRepoStatus } from "../hooks/useGit";
+import { useCommit, useRepoStatus, useSigningInfo } from "../hooks/useGit";
 import { useRepoStore } from "../stores/repo-store";
-import { Send, RotateCcw } from "lucide-react";
+import { Send, RotateCcw, Key } from "lucide-react";
 
 export function CommitDialog() {
   const repoPath = useRepoStore((s) => s.repoPath);
   const status = useRepoStatus();
+  const signing = useSigningInfo();
   const commitMut = useCommit();
   const [message, setMessage] = useState("");
   const [amend, setAmend] = useState(false);
+  const [sign, setSign] = useState(false);
 
   const stagedCount = status.data?.filter((f) => f.staged).length ?? 0;
   const canCommit = stagedCount > 0 && message.trim().length > 0 && !commitMut.isPending;
+  const signingAvailable = signing.data?.enabled ?? false;
 
   function handleSubmit() {
     if (!canCommit) return;
     commitMut.mutate(
-      { message: message.trim(), amend },
+      { message: message.trim(), amend, sign: sign && signingAvailable },
       {
         onSuccess: () => {
           setMessage("");
           setAmend(false);
+          setSign(false);
         },
       }
     );
@@ -68,8 +72,35 @@ export function CommitDialog() {
                 className="accent-[var(--accent)]"
               />
               <RotateCcw size={12} />
-              Amend last commit
+              Amend
             </label>
+
+            {signingAvailable && (
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer"
+                     style={{ color: "var(--text-muted)" }}>
+                <input
+                  type="checkbox"
+                  checked={sign}
+                  onChange={(e) => setSign(e.target.checked)}
+                  className="accent-[var(--accent)]"
+                />
+                <Key size={12} />
+                Sign ({signing.data?.format === "ssh" ? "SSH" : "GPG"})
+              </label>
+            )}
+
+            {signingAvailable && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded"
+                    style={{
+                      background: "var(--accent)",
+                      color: "var(--text-inverse)",
+                      opacity: 0.7,
+                    }}>
+                {signing.data?.key_id.slice(0, 16)}
+                {signing.data?.key_id.length ?? 0 > 16 ? "..." : ""}
+              </span>
+            )}
+
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
               {stagedCount} file{stagedCount !== 1 ? "s" : ""} staged
             </span>

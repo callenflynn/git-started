@@ -8,6 +8,9 @@ import {
   useStashes,
   useStashPop,
   useTags,
+  useSubmodules,
+  useSubmoduleUpdate,
+  useCredentialInfo,
 } from "../hooks/useGit";
 import { useState } from "react";
 import {
@@ -15,10 +18,15 @@ import {
   Globe,
   Tag,
   Archive,
-  ChevronRight,
   Plus,
   Trash2,
   ArrowDownToLine,
+  GitMerge,
+  Package,
+  RefreshCw,
+  Key,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 
 function SectionHeader({ title, children }: { title: string; children?: React.ReactNode }) {
@@ -34,11 +42,12 @@ function SectionHeader({ title, children }: { title: string; children?: React.Re
   );
 }
 
-function BranchItem({ name, isHead, onCheckout, onDelete }: {
+function BranchItem({ name, isHead, onCheckout, onDelete, onRebase }: {
   name: string;
   isHead: boolean;
   onCheckout: () => void;
   onDelete: () => void;
+  onRebase?: () => void;
 }) {
   return (
     <div
@@ -58,35 +67,54 @@ function BranchItem({ name, isHead, onCheckout, onDelete }: {
         </span>
       )}
       {!isHead && (
-        <button
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-500/20"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          title="Delete branch"
-        >
-          <Trash2 size={12} style={{ color: "var(--text-muted)" }} />
-        </button>
+        <>
+          {onRebase && (
+            <button
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-blue-500/20"
+              onClick={(e) => { e.stopPropagation(); onRebase(); }}
+              title="Rebase onto another branch"
+            >
+              <GitMerge size={12} style={{ color: "var(--text-muted)" }} />
+            </button>
+          )}
+          <button
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-500/20"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            title="Delete branch"
+          >
+            <Trash2 size={12} style={{ color: "var(--text-muted)" }} />
+          </button>
+        </>
       )}
     </div>
   );
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  onRebase: (branch: string, base: string) => void;
+}
+
+export function Sidebar({ onRebase }: SidebarProps) {
   const repoPath = useRepoStore((s) => s.repoPath);
   const selectFile = useRepoStore((s) => s.selectFile);
   const branches = useBranches();
   const remotes = useRemotes();
   const stashes = useStashes();
   const tags = useTags();
+  const submodules = useSubmodules();
+  const credentials = useCredentialInfo();
   const checkoutMut = useCheckout();
   const createBranchMut = useCreateBranch();
   const deleteBranchMut = useDeleteBranch();
   const stashPopMut = useStashPop();
+  const submoduleUpdateMut = useSubmoduleUpdate();
 
   const [newBranch, setNewBranch] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
 
   const localBranches = branches.data?.filter((b) => !b.is_remote) ?? [];
   const remoteBranches = branches.data?.filter((b) => b.is_remote) ?? [];
+  const currentBranch = branches.data?.find((b) => b.is_head);
 
   function handleCheckout(name: string) {
     checkoutMut.mutate(name);
@@ -143,6 +171,11 @@ export function Sidebar() {
             isHead={b.is_head}
             onCheckout={() => handleCheckout(b.name)}
             onDelete={() => deleteBranchMut.mutate(b.name)}
+            onRebase={
+              !b.is_head
+                ? () => onRebase(b.name, currentBranch?.name ?? "main")
+                : undefined
+            }
           />
         ))}
       </div>
@@ -204,6 +237,63 @@ export function Sidebar() {
               </span>
             </div>
           ))}
+        </>
+      )}
+
+      {/* Submodules */}
+      {(submodules.data?.length ?? 0) > 0 && (
+        <>
+          <SectionHeader title="Submodules">
+            <Package size={13} style={{ color: "var(--text-muted)" }} />
+          </SectionHeader>
+          {submodules.data!.map((sm) => (
+            <div
+              key={sm.name}
+              className="flex items-center gap-2 px-3 py-1.5 group cursor-pointer transition-colors"
+              title={`Update submodule ${sm.name}`}
+              onClick={() => submoduleUpdateMut.mutate(sm.name)}
+            >
+              <Package size={13} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+              <span className="text-sm truncate flex-1"
+                    style={{ color: "var(--text-secondary)" }}>
+                {sm.name}
+              </span>
+              <span className="text-[10px] px-1 py-0.5 rounded"
+                    style={{
+                      background: sm.status === "initialized" ? "#22C55E/20" : "#F59E0B/20",
+                      color: sm.status === "initialized" ? "#22C55E" : "#F59E0B",
+                    }}>
+                {sm.status}
+              </span>
+              <RefreshCw
+                size={11}
+                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ color: "var(--text-muted)" }}
+              />
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* Credential helper */}
+      {credentials.data?.configured && (
+        <>
+          <SectionHeader title="Credentials">
+            <Key size={13} style={{ color: "var(--text-muted)" }} />
+          </SectionHeader>
+          <div className="px-3 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div className="flex items-center gap-1.5 mb-1">
+              <CheckCircle size={12} style={{ color: "#22C55E" }} />
+              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                {credentials.data.helper}
+              </span>
+            </div>
+            {credentials.data.storage && (
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Storage: {credentials.data.storage}
+              </span>
+            )}
+          </div>
         </>
       )}
     </aside>

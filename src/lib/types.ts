@@ -49,3 +49,45 @@ export interface TagInfo {
   oid: string;
   message: string | null;
 }
+
+export interface SigningInfo {
+  enabled: boolean;
+  format: string;
+  key_id: string;
+}
+
+export interface RebaseCommit {
+  oid: string;
+  short_oid: string;
+  message: string;
+  author: string;
+  timestamp: number;
+  operation: string;
+  new_message: string | null;
+}
+
+export interface RebaseStatus {
+  in_progress: boolean;
+  current_head: string | null;
+}
+
+export interface ConflictFile {
+  path: string;
+  ancestor: string | null;
+  ours: string | null;
+  theirs: string | null;
+}
+
+export interface SubmoduleInfo {
+  name: string;
+  path: string;
+  url: string;
+  head_oid: string;
+  status: string;
+}
+
+export interface CredentialInfo {
+  helper: string;
+  storage: string;
+  configured: boolean;
+}

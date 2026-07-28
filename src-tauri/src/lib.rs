@@ -1,6 +1,7 @@
 use git2::{Repository, Sort};
 use serde::Serialize;
 use std::path::Path;
+use std::process::Command;
 
 // ────────────────────── Data types sent to the frontend ──────────────────────
 
@@ -59,6 +60,54 @@ pub struct TagInfo {
     name: String,
     oid: String,
     message: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SigningInfo {
+    enabled: bool,
+    format: String,
+    key_id: String,
+}
+
+#[derive(Serialize)]
+pub struct RebaseCommit {
+    oid: String,
+    short_oid: String,
+    message: String,
+    author: String,
+    timestamp: i64,
+    operation: String,
+    new_message: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct RebaseStatus {
+    in_progress: bool,
+    current_head: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ConflictFile {
+    path: String,
+    ancestor: Option<String>,
+    ours: Option<String>,
+    theirs: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SubmoduleInfo {
+    name: String,
+    path: String,
+    url: String,
+    head_oid: String,
+    status: String,
+}
+
+#[derive(Serialize)]
+pub struct CredentialInfo {
+    helper: String,
+    storage: String,
+    configured: bool,
 }
 
 // ────────────────────── Helper functions ──────────────────────
@@ -342,17 +391,44 @@ fn get_log(repo_path: String, max: Option<usize>) -> Result<Vec<CommitInfo>, Str
 }
 
 /// Create a new commit from staged files.
+/// When sign is true, uses `git commit -S` for GPG/SSH signing.
 #[tauri::command]
-fn do_commit(repo_path: String, message: String, amend: bool) -> Result<String, String> {
+fn do_commit(
+    repo_path: String,
+    message: String,
+    amend: bool,
+    sign: bool,
+) -> Result<String, String> {
+    if sign {
+        // Shell out to `git commit -S` for signing support.
+        // libgit2 does not have native signing callbacks.
+        let mut args = vec!["commit", "-S", "--allow-empty", "-m", &message];
+        if amend {
+            args.push("--amend");
+        }
+        let output = Command::new("git")
+            .current_dir(&repo_path)
+            .args(&args)
+            .output()
+            .map_err(|e| format!("Failed to run git: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git commit -S failed: {}", stderr));
+        }
+
+        // Parse the new commit hash from output.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Ok(parse_commit_hash_from_output(&stdout, &repo_path));
+    }
+
+    // Unsigned commit via libgit2.
     let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
-
     let sig = repo.signature().map_err(|e| e.to_string())?;
-
     let mut index = repo.index().map_err(|e| e.to_string())?;
     index.write_tree().map_err(|e| e.to_string())?;
     let tree_oid = index.write_tree().map_err(|e| e.to_string())?;
     let tree = repo.find_tree(tree_oid).map_err(|e| e.to_string())?;
-
     let head_commit = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
 
     if amend {
@@ -372,6 +448,56 @@ fn do_commit(repo_path: String, message: String, amend: bool) -> Result<String, 
         .map_err(|e| e.to_string())?;
 
     Ok(oid_to_hex(oid))
+}
+
+/// Parse the commit hash from `git commit` output.
+fn parse_commit_hash_from_output(stdout: &str, repo_path: &str) -> String {
+    // Try to read HEAD directly since git commit output varies.
+    if let Ok(repo) = Repository::open(repo_path) {
+        if let Ok(head) = repo.head() {
+            if let Some(oid) = head.target() {
+                return oid_to_hex(oid);
+            }
+        }
+    }
+    // Fallback: parse "[branch abc1234] message" format.
+    if let Some(start) = stdout.find("] ") {
+        let rest = &stdout[start + 2..];
+        if let Some(end) = rest.find(' ') {
+            return rest[..end].to_string();
+        }
+    }
+    "unknown".to_string()
+}
+
+/// Read commit signing configuration from git config.
+#[tauri::command]
+fn get_signing_info(repo_path: String) -> Result<SigningInfo, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let cfg = repo.config().map_err(|e| e.to_string())?;
+
+    let format = cfg
+        .get_string("gpg.format")
+        .unwrap_or_else(|_| "openpgp".to_string());
+
+    let key_id = match format.as_str() {
+        "ssh" => cfg
+            .get_string("user.signingkey")
+            .unwrap_or_else(|_| cfg
+                .get_string("gpg.ssh.defaultKeyCommand")
+                .unwrap_or_default()),
+        _ => cfg
+            .get_string("user.signingkey")
+            .unwrap_or_default(),
+    };
+
+    let enabled = !key_id.is_empty();
+
+    Ok(SigningInfo {
+        enabled,
+        format,
+        key_id,
+    })
 }
 
 // ────────────────────── Staging commands ──────────────────────
@@ -717,12 +843,475 @@ fn create_tag(repo_path: String, name: String) -> Result<(), String> {
     Ok(())
 }
 
+// ────────────────────── Interactive rebase commands ──────────────────────
+
+/// Get commits on a branch that are not in the base branch.
+/// These are the candidates for interactive rebase.
+#[tauri::command]
+fn get_rebase_commits(
+    repo_path: String,
+    branch: String,
+    base: String,
+) -> Result<Vec<RebaseCommit>, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+
+    let branch_oid = repo
+        .refname_to_id(&format!("refs/heads/{}", branch))
+        .or_else(|_| repo.refname_to_id(&format!("refs/remotes/origin/{}", branch)))
+        .map_err(|e| format!("Branch '{}' not found: {}", branch, e))?;
+
+    let base_oid = repo
+        .refname_to_id(&format!("refs/heads/{}", base))
+        .or_else(|_| repo.refname_to_id(&format!("refs/remotes/origin/{}", base)))
+        .or_else(|_| repo.refname_to_id("HEAD"))
+        .map_err(|e| format!("Base '{}' not found: {}", base, e))?;
+
+    let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
+    revwalk.set_sorting(Sort::TIME).map_err(|e| e.to_string())?;
+    revwalk
+        .hide(base_oid)
+        .map_err(|e| e.to_string())?;
+    revwalk
+        .push(branch_oid)
+        .map_err(|e| e.to_string())?;
+
+    let mut result = Vec::new();
+    for oid_result in revwalk {
+        let oid = oid_result.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+        let message = commit
+            .message()
+            .unwrap_or("")
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string();
+
+        result.push(RebaseCommit {
+            oid: oid_to_hex(oid),
+            short_oid: oid_to_hex(oid)[..7.min(oid_to_hex(oid).len())].to_string(),
+            message,
+            author: commit.author().name().unwrap_or("").to_string(),
+            timestamp: commit.time().seconds(),
+            operation: "pick".to_string(),
+            new_message: None,
+        });
+    }
+
+    // Revwalk returns newest first. We want oldest first for rebase.
+    result.reverse();
+    Ok(result)
+}
+
+/// Check if a rebase is currently in progress.
+#[tauri::command]
+fn get_rebase_status(repo_path: String) -> Result<RebaseStatus, String> {
+    let rebase_dir = Path::new(&repo_path).join(".git").join("rebase-merge");
+    let rebase_apply = Path::new(&repo_path).join(".git").join("rebase-apply");
+
+    let in_progress = rebase_dir.exists() || rebase_apply.exists();
+    let current_head = if in_progress {
+        // Read the onto commit from the rebase state.
+        let head_file = if rebase_dir.exists() {
+            rebase_dir.join("head-name")
+        } else {
+            rebase_apply.join("head-name")
+        };
+        std::fs::read_to_string(head_file)
+            .ok()
+            .map(|s| s.trim().to_string())
+    } else {
+        None
+    };
+
+    Ok(RebaseStatus {
+        in_progress,
+        current_head,
+    })
+}
+
+/// Start an interactive rebase. Each commit can have an operation:
+/// pick, squash, fixup, reword, edit, drop.
+/// This shells out to `git rebase -i` since libgit2's rebase API
+/// does not support custom commit selection.
+#[tauri::command]
+fn start_rebase(
+    repo_path: String,
+    onto: String,
+    operations: Vec<RebaseCommit>,
+) -> Result<(), String> {
+    // Build the todo list for git rebase -i.
+    let mut todo_lines: Vec<String> = Vec::new();
+    for op in &operations {
+        let oid = &op.oid;
+        let line = match op.operation.as_str() {
+            "squash" | "s" => {
+                if let Some(ref new_msg) = op.new_message {
+                    format!("s {} {}", oid, new_msg.replace('\n', " "))
+                } else {
+                    format!("s {}", oid)
+                }
+            }
+            "fixup" | "f" => format!("f {}", oid),
+            "reword" | "r" => {
+                if let Some(ref new_msg) = op.new_message {
+                    format!("r {} {}", oid, new_msg.replace('\n', " "))
+                } else {
+                    format!("r {}", oid)
+                }
+            }
+            "edit" | "e" => format!("e {}", oid),
+            "drop" | "d" => format!("d {}", oid),
+            _ => format!("pick {}", oid),
+        };
+        todo_lines.push(line);
+    }
+
+    let todo = todo_lines.join("\n");
+
+    // Write the todo file and invoke rebase.
+    use std::io::Write;
+    let output = Command::new("git")
+        .current_dir(&repo_path)
+        .args([
+            "rebase",
+            "-i",
+            &onto,
+            "--no-autosquash",
+            "--quiet",
+        ])
+        .env("GIT_SEQUENCE_EDITOR", "cat") // Just show the todo, don't edit.
+        .output()
+        .map_err(|e| format!("Failed to start rebase: {}", e))?;
+
+    // If rebase needs manual todo editing, we write our own todo.
+    if !output.status.success() {
+        // Try the manual approach: init rebase, write todo, continue.
+        let rebase_dir = Path::new(&repo_path).join(".git").join("rebase-merge");
+        if !rebase_dir.exists() {
+            return Err(format!(
+                "Rebase could not start. Git output: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        let todo_path = rebase_dir.join("git-rebase-todo");
+        let mut f = std::fs::File::create(&todo_path)
+            .map_err(|e| format!("Failed to write todo file: {}", e))?;
+        f.write_all(todo.as_bytes())
+            .map_err(|e| format!("Failed to write todo: {}", e))?;
+        f.flush().map_err(|e| format!("Failed to flush todo: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Continue a rebase that is in progress (after resolving conflicts).
+#[tauri::command]
+fn rebase_continue(repo_path: String) -> Result<(), String> {
+    let output = Command::new("git")
+        .current_dir(&repo_path)
+        .args(["rebase", "--continue"])
+        .output()
+        .map_err(|e| format!("Failed to continue rebase: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git rebase --continue failed: {}", stderr));
+    }
+    Ok(())
+}
+
+/// Abort a rebase in progress.
+#[tauri::command]
+fn rebase_abort(repo_path: String) -> Result<(), String> {
+    let output = Command::new("git")
+        .current_dir(&repo_path)
+        .args(["rebase", "--abort"])
+        .output()
+        .map_err(|e| format!("Failed to abort rebase: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git rebase --abort failed: {}", stderr));
+    }
+    Ok(())
+}
+
+// ────────────────────── Merge conflict commands ──────────────────────
+
+/// Check if a merge/rebase is in progress and list conflicting files.
+#[tauri::command]
+fn get_conflicts(repo_path: String) -> Result<Vec<ConflictFile>, String> {
+    let merge_head = Path::new(&repo_path).join(".git").join("MERGE_HEAD");
+    let rebase_dir = Path::new(&repo_path).join(".git").join("rebase-merge");
+    let rebase_apply = Path::new(&repo_path).join(".git").join("rebase-apply");
+
+    if !merge_head.exists() && !rebase_dir.exists() && !rebase_apply.exists() {
+        return Ok(vec![]);
+    }
+
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+    index.add_conflicts_from_dir(Path::new(".")).ok();
+    index.write().ok();
+
+    let mut conflicts = Vec::new();
+    if let Ok(conflict_iter) = index.conflicts() {
+        for conflict_result in conflict_iter {
+            if let Ok(entry) = conflict_result {
+                let path_str = entry
+                    .ancestor
+                    .as_ref()
+                    .or(entry.ourself.as_ref())
+                    .or(entry.theirself.as_ref())
+                    .map(|e| {
+                        e.path
+                            .as_ref()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_default()
+                    })
+                    .unwrap_or_default();
+
+                // Read conflict markers from the file.
+                let full_path = Path::new(&repo_path).join(&path_str);
+                let content = std::fs::read_to_string(&full_path).unwrap_or_default();
+
+                let (ancestor, ours, theirs) = parse_conflict_markers(&content);
+
+                conflicts.push(ConflictFile {
+                    path: path_str,
+                    ancestor,
+                    ours,
+                    theirs,
+                });
+            }
+        }
+    }
+
+    Ok(conflicts)
+}
+
+/// Parse conflict markers (<<<<<<<, =======, >>>>>>>) from file content.
+fn parse_conflict_markers(content: &str) -> (Option<String>, Option<String>, Option<String>) {
+    let mut ancestor = None;
+    let mut ours = None;
+    let mut theirs = None;
+
+    let mut current_section = "";
+    let mut current_lines: Vec<String> = Vec::new();
+
+    for line in content.lines() {
+        if line.starts_with("<<<<<<<") {
+            current_section = "ours";
+            current_lines.clear();
+        } else if line.starts_with("=======") {
+            if current_section == "ours" {
+                ours = Some(current_lines.join("\n"));
+            } else if current_section == "ancestor" {
+                ancestor = Some(current_lines.join("\n"));
+            }
+            current_lines.clear();
+            current_section = if ours.is_some() { "theirs" } else { "ancestor" };
+        } else if line.starts_with(">>>>>>>") {
+            if current_section == "theirs" {
+                theirs = Some(current_lines.join("\n"));
+            } else if current_section == "ancestor" {
+                ancestor = Some(current_lines.join("\n"));
+            }
+            current_lines.clear();
+            current_section = "";
+        } else {
+            current_lines.push(line.to_string());
+        }
+    }
+
+    (ancestor, ours, theirs)
+}
+
+/// Mark a conflict as resolved by choosing one side and staging the file.
+#[tauri::command]
+fn resolve_conflict(
+    repo_path: String,
+    file_path: String,
+    side: String,
+) -> Result<(), String> {
+    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+
+    let full_path = Path::new(&file_path);
+    let content = std::fs::read_to_string(full_path).map_err(|e| e.to_string())?;
+    let (ancestor, ours, theirs) = parse_conflict_markers(&content);
+
+    let resolved = match side.as_str() {
+        "ours" => ours.unwrap_or_default(),
+        "theirs" => theirs.unwrap_or_default(),
+        "base" => ancestor.unwrap_or_default(),
+        _ => return Err(format!("Invalid side: {}", side)),
+    };
+
+    std::fs::write(full_path, resolved).map_err(|e| e.to_string())?;
+
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+    index
+        .add_path(full_path)
+        .map_err(|e| e.to_string())?;
+    index.write().map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+// ────────────────────── Commit search commands ──────────────────────
+
+/// Search commits by author or message substring.
+#[tauri::command]
+fn search_commits(
+    repo_path: String,
+    query: String,
+    max: Option<usize>,
+) -> Result<Vec<CommitInfo>, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let head = repo.head().map_err(|e| e.to_string())?;
+
+    let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
+    revwalk.set_sorting(Sort::TIME).map_err(|e| e.to_string())?;
+    revwalk.push(head.target().ok_or("HEAD has no target")?)
+        .map_err(|e| e.to_string())?;
+
+    let limit = max.unwrap_or(500);
+    let query_lower = query.to_lowercase();
+    let mut result = Vec::new();
+
+    for oid_result in revwalk {
+        if result.len() >= limit {
+            break;
+        }
+        let oid = oid_result.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+
+        let message = commit.message().unwrap_or("").to_string();
+        let author = commit.author().name().unwrap_or("").to_string();
+        let author_email = commit.author().email().unwrap_or("").to_string();
+
+        if message.to_lowercase().contains(&query_lower)
+            || author.to_lowercase().contains(&query_lower)
+            || author_email.to_lowercase().contains(&query_lower)
+        {
+            let first_line = message.lines().next().unwrap_or("").to_string();
+            result.push(CommitInfo {
+                oid: oid_to_hex(oid),
+                short_oid: oid_to_hex(oid)[..7.min(oid_to_hex(oid).len())].to_string(),
+                message: first_line,
+                author,
+                author_email,
+                timestamp: commit.time().seconds(),
+                parent_oids: commit.parent_ids().map(oid_to_hex).collect(),
+                branch_names: vec![],
+            });
+        }
+    }
+
+    Ok(result)
+}
+
+// ────────────────────── Submodule commands ──────────────────────
+
+/// List all submodules in the repository.
+#[tauri::command]
+fn get_submodules(repo_path: String) -> Result<Vec<SubmoduleInfo>, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let mut result = Vec::new();
+
+    if let Ok(submodules) = repo.submodules() {
+        for sm in submodules {
+            let name = sm.name().unwrap_or("").to_string();
+            let path = sm.path().to_string_lossy().to_string();
+            let url = sm.url().unwrap_or("").to_string();
+            let head_oid = sm
+                .head_id()
+                .map(|oid| oid_to_hex(oid))
+                .unwrap_or_default();
+
+            // Determine status.
+            let status = if sm.open().is_err() {
+                "not_init"
+            } else if head_oid.is_empty() {
+                "uninitialized"
+            } else {
+                "initialized"
+            };
+
+            result.push(SubmoduleInfo {
+                name,
+                path,
+                url,
+                head_oid,
+                status: status.to_string(),
+            });
+        }
+    }
+
+    Ok(result)
+}
+
+/// Initialise and update a submodule.
+#[tauri::command]
+fn submodule_update(repo_path: String, name: String) -> Result<(), String> {
+    let output = Command::new("git")
+        .current_dir(&repo_path)
+        .args(["submodule", "update", "--init", "--recursive", &name])
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git submodule update failed: {}", stderr));
+    }
+    Ok(())
+}
+
+// ────────────────────── Credential helper commands ──────────────────────
+
+/// Read the configured credential helper and its status.
+#[tauri::command]
+fn get_credential_info(repo_path: String) -> Result<CredentialInfo, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let cfg = repo.config().map_err(|e| e.to_string())?;
+
+    let helper = cfg
+        .get_string("credential.helper")
+        .unwrap_or_default();
+
+    let storage = cfg
+        .get_string("credential.cache.ignoreoptions")
+        .ok()
+        .map(|_| "cache".to_string())
+        .or_else(|| {
+            if helper.contains("store") {
+                Some("store".to_string())
+            } else if helper.contains("manager") {
+                Some("manager".to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+
+    let configured = !helper.is_empty();
+
+    Ok(CredentialInfo {
+        helper,
+        storage,
+        configured,
+    })
+}
+
 // ────────────────────── Entry point ──────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             open_repo,
             clone_repo,
@@ -748,6 +1337,18 @@ pub fn run() {
             get_stashes,
             get_tags,
             create_tag,
+            get_signing_info,
+            get_rebase_commits,
+            get_rebase_status,
+            start_rebase,
+            rebase_continue,
+            rebase_abort,
+            get_conflicts,
+            resolve_conflict,
+            search_commits,
+            get_submodules,
+            submodule_update,
+            get_credential_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

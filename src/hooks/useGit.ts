@@ -26,19 +26,23 @@ export function useLog() {
 
 export function useBranches() {
   const repoPath = useRepoStore((s) => s.repoPath);
+  const autoFetchMs = useRepoStore((s) => s.autoFetchMs);
   return useQuery({
     queryKey: ["branches", repoPath],
     queryFn: () => git.getBranches(repoPath!),
     enabled: !!repoPath,
+    refetchInterval: autoFetchMs > 0 ? autoFetchMs : false,
   });
 }
 
 export function useRemotes() {
   const repoPath = useRepoStore((s) => s.repoPath);
+  const autoFetchMs = useRepoStore((s) => s.autoFetchMs);
   return useQuery({
     queryKey: ["remotes", repoPath],
     queryFn: () => git.getRemotes(repoPath!),
     enabled: !!repoPath,
+    refetchInterval: autoFetchMs > 0 ? autoFetchMs : false,
   });
 }
 
@@ -113,13 +117,29 @@ export function useCommit() {
   const qc = useQueryClient();
   const repoPath = useRepoStore((s) => s.repoPath);
   return useMutation({
-    mutationFn: ({ message, amend }: { message: string; amend: boolean }) =>
-      git.commit(repoPath!, message, amend),
+    mutationFn: ({
+      message,
+      amend,
+      sign,
+    }: {
+      message: string;
+      amend: boolean;
+      sign: boolean;
+    }) => git.commit(repoPath!, message, amend, sign),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["status", repoPath] });
       qc.invalidateQueries({ queryKey: ["log", repoPath] });
       qc.invalidateQueries({ queryKey: ["branches", repoPath] });
     },
+  });
+}
+
+export function useSigningInfo() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["signing", repoPath],
+    queryFn: () => git.getSigningInfo(repoPath!),
+    enabled: !!repoPath,
   });
 }
 
@@ -208,5 +228,137 @@ export function useStashPop() {
       qc.invalidateQueries({ queryKey: ["status", repoPath] });
       qc.invalidateQueries({ queryKey: ["stashes", repoPath] });
     },
+  });
+}
+
+// ---- Rebase hooks ----
+
+export function useRebaseCommits(branch: string, base: string) {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["rebase-commits", repoPath, branch, base],
+    queryFn: () => git.getRebaseCommits(repoPath!, branch, base),
+    enabled: !!repoPath && !!branch && !!base,
+  });
+}
+
+export function useRebaseStatus() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["rebase-status", repoPath],
+    queryFn: () => git.getRebaseStatus(repoPath!),
+    enabled: !!repoPath,
+  });
+}
+
+export function useStartRebase() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: ({
+      onto,
+      operations,
+    }: {
+      onto: string;
+      operations: import("../lib/types").RebaseCommit[];
+    }) => git.startRebase(repoPath!, onto, operations),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["log", repoPath] });
+      qc.invalidateQueries({ queryKey: ["branches", repoPath] });
+      qc.invalidateQueries({ queryKey: ["rebase-status", repoPath] });
+    },
+  });
+}
+
+export function useRebaseContinue() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: () => git.rebaseContinue(repoPath!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["log", repoPath] });
+      qc.invalidateQueries({ queryKey: ["branches", repoPath] });
+      qc.invalidateQueries({ queryKey: ["rebase-status", repoPath] });
+    },
+  });
+}
+
+export function useRebaseAbort() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: () => git.rebaseAbort(repoPath!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["status", repoPath] });
+      qc.invalidateQueries({ queryKey: ["log", repoPath] });
+      qc.invalidateQueries({ queryKey: ["branches", repoPath] });
+      qc.invalidateQueries({ queryKey: ["rebase-status", repoPath] });
+    },
+  });
+}
+
+// ---- Conflict hooks ----
+
+export function useConflicts() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["conflicts", repoPath],
+    queryFn: () => git.getConflicts(repoPath!),
+    enabled: !!repoPath,
+  });
+}
+
+export function useResolveConflict() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: ({ filePath, side }: { filePath: string; side: string }) =>
+      git.resolveConflict(repoPath!, filePath, side),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["status", repoPath] });
+      qc.invalidateQueries({ queryKey: ["conflicts", repoPath] });
+    },
+  });
+}
+
+// ---- Submodule hooks ----
+
+export function useSubmodules() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["submodules", repoPath],
+    queryFn: () => git.getSubmodules(repoPath!),
+    enabled: !!repoPath,
+  });
+}
+
+export function useSubmoduleUpdate() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: (name: string) => git.submoduleUpdate(repoPath!, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["submodules", repoPath] }),
+  });
+}
+
+// ---- Credential hooks ----
+
+export function useCredentialInfo() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["credentials", repoPath],
+    queryFn: () => git.getCredentialInfo(repoPath!),
+    enabled: !!repoPath,
+  });
+}
+
+// ---- Commit search hook ----
+
+export function useSearchCommits(query: string) {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["search-commits", repoPath, query],
+    queryFn: () => git.searchCommits(repoPath!, query),
+    enabled: !!repoPath && query.trim().length > 0,
   });
 }
