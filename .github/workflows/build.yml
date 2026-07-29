@@ -78,14 +78,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sign DMG for auto-updater
-        if: secrets.UPDATER_PRIVATE_KEY != ''
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATER_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATER_PRIVATE_KEY_PASSWORD }}
         run: |
-          npx @tauri-apps/cli signer sign \
-            -f src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg \
-            -o src-tauri/target/universal-apple-darwin/release/bundle/dmg/signature.txt
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npx @tauri-apps/cli signer sign \
+              -f src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg \
+              -o src-tauri/target/universal-apple-darwin/release/bundle/dmg/signature.txt
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -144,14 +145,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sign AppImage for auto-updater
-        if: secrets.UPDATER_PRIVATE_KEY != ''
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATER_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATER_PRIVATE_KEY_PASSWORD }}
         run: |
-          npx @tauri-apps/cli signer sign \
-            -f src-tauri/target/release/bundle/appimage/*.AppImage \
-            -o src-tauri/target/release/bundle/appimage/signature.txt
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npx @tauri-apps/cli signer sign \
+              -f src-tauri/target/release/bundle/appimage/*.AppImage \
+              -o src-tauri/target/release/bundle/appimage/signature.txt
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -203,15 +205,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sign EXE for auto-updater
-        if: secrets.UPDATER_PRIVATE_KEY != ''
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATER_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATER_PRIVATE_KEY_PASSWORD }}
         shell: bash
         run: |
-          npx @tauri-apps/cli signer sign \
-            -f src-tauri/target/release/bundle/nsis/*.exe \
-            -o src-tauri/target/release/bundle/nsis/signature.txt
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npx @tauri-apps/cli signer sign \
+              -f src-tauri/target/release/bundle/nsis/*.exe \
+              -o src-tauri/target/release/bundle/nsis/signature.txt
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -244,11 +247,17 @@ jobs:
           merge-multiple: true
 
       - name: Generate updates.json
-        if: secrets.UPDATER_PRIVATE_KEY != ''
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATER_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATER_PRIVATE_KEY_PASSWORD }}
         run: |
-          TAG="${{ needs.prepare.outputs.tag }}"
           VER="${{ needs.prepare.outputs.version }}"
-          BASE="https://github.com/Notsk/git-started/releases/download/${TAG}"
+          BASE="https://github.com/Notsk/git-started/releases/download/${{ needs.prepare.outputs.tag }}"
+
+          SIGNATURE=""
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -f artifacts/signature.txt ]; then
+            SIGNATURE=$(cat artifacts/signature.txt)
+          fi
 
           cat > updates.json << EOF
           {
@@ -256,19 +265,19 @@ jobs:
             "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "platforms": {
               "windows-x86_64": {
-                "signature": "$(cat artifacts/signature.txt || echo '')",
+                "signature": "${SIGNATURE}",
                 "url": "${BASE}/$(ls artifacts/*-setup.exe 2>/dev/null | xargs -n1 basename)"
               },
               "darwin-x86_64": {
-                "signature": "$(cat artifacts/signature.txt || echo '')",
+                "signature": "${SIGNATURE}",
                 "url": "${BASE}/$(ls artifacts/*.dmg 2>/dev/null | xargs -n1 basename)"
               },
               "darwin-aarch64": {
-                "signature": "$(cat artifacts/signature.txt || echo '')",
+                "signature": "${SIGNATURE}",
                 "url": "${BASE}/$(ls artifacts/*.dmg 2>/dev/null | xargs -n1 basename)"
               },
               "linux-x86_64": {
-                "signature": "$(cat artifacts/signature.txt || echo '')",
+                "signature": "${SIGNATURE}",
                 "url": "${BASE}/$(ls artifacts/*.AppImage 2>/dev/null | xargs -n1 basename)"
               }
             }
