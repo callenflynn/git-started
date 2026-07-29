@@ -86,7 +86,7 @@ jobs:
             FILE=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
             if [ -n "$FILE" ]; then
               npx @tauri-apps/cli signer sign "$FILE" \
-                -o src-tauri/target/universal-apple-darwin/release/bundle/dmg/signature.txt
+                > src-tauri/target/universal-apple-darwin/release/bundle/dmg/signature.txt
             fi
           fi
 
@@ -155,7 +155,7 @@ jobs:
             FILE=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
             if [ -n "$FILE" ]; then
               npx @tauri-apps/cli signer sign "$FILE" \
-                -o src-tauri/target/release/bundle/appimage/signature.txt
+                > src-tauri/target/release/bundle/appimage/signature.txt
             fi
           fi
 
@@ -218,7 +218,7 @@ jobs:
             FILE=$(ls src-tauri/target/release/bundle/nsis/*.exe 2>/dev/null | head -1)
             if [ -n "$FILE" ]; then
               npx @tauri-apps/cli signer sign "$FILE" \
-                -o src-tauri/target/release/bundle/nsis/signature.txt
+                > src-tauri/target/release/bundle/nsis/signature.txt
             fi
           fi
 
