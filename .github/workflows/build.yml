@@ -190,7 +190,24 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
           name: ${{ steps.version.outputs.VERSION }}
-          body: "Automated build for commit ${{ github.sha }}"
+          body: |
+            Build for commit `${{ github.sha }}`.
+
+            ### Windows
+
+            - **`*-setup.exe`** — NSIS installer. Recommended for most users. Double-click, next, done.
+            - **`*.msi`** — MSI installer. For managed deployments (Intune, Group Policy, silent install via `msiexec`).
+
+            ### macOS
+
+            - **`*.dmg`** — Disk image. Open it, drag git-started to Applications. On first launch, right-click → Open (Gatekeeper).
+
+            ### Linux
+
+            - **`*.deb`** — For Debian / Ubuntu / Mint / Pop!_OS. Install with `sudo dpkg -i <file>` or `sudo apt install ./<file>`.
+            - **`*.AppImage`** — Portable, works on any distro. Run `chmod +x <file> && ./<file>`.
+
+            > All artifacts are built from the same commit. Pick the one for your OS.
           draft: false
           prerelease: true
           files: |
