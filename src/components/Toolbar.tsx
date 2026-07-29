@@ -9,6 +9,8 @@ import {
   useRebaseContinue,
   useRebaseAbort,
 } from "../hooks/useGit";
+import { openRepo } from "../lib/tauri";
+import { open } from "@tauri-apps/plugin-dialog";
 import { ThemeToggle } from "./ThemeToggle";
 import {
   ArrowUp,
@@ -35,10 +37,8 @@ export function Toolbar() {
   const currentBranch = branches.data?.find((b) => b.is_head);
 
   async function handleOpen() {
-    const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({ directory: true, multiple: false });
     if (typeof selected === "string") {
-      const { openRepo } = await import("../lib/tauri");
       const info = await openRepo(selected);
       setRepoPath(info.path);
     }
