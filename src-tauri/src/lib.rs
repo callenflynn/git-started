@@ -1547,7 +1547,7 @@ fn get_git_config(key: String, repo_path: Option<String>) -> Result<Option<Strin
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             open_repo,
             clone_repo,

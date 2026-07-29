@@ -1,0 +1,93 @@
+name: Bug Report
+description: Report a problem with git-started
+labels: [bug]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Preliminary checks
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: I am running the latest release
+          required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os_version
+    attributes:
+      label: OS version / distro
+      description: |
+        Windows: run `winver`
+        macOS: "Sonoma", "Sequoia", etc.
+        Linux: distro name and version (e.g. "Ubuntu 24.04", "Fedora 40")
+      placeholder: e.g. Windows 11, macOS Sequoia, Ubuntu 24.04
+  - type: input
+    id: version
+    attributes:
+      label: git-started version
+      description: Shown in the release name (e.g. `0.0.0-dev.20.9efb13a`)
+      placeholder: 0.0.0-dev.20.9efb13a
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options:
+        - MSI (Windows)
+        - EXE installer (Windows)
+        - DMG (macOS)
+        - DEB (Linux)
+        - AppImage (Linux)
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen?
+      placeholder: When I click "Clone Repository", nothing happens. I expected a dialog to appear.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open git-started
+        2. Click "Clone Repository"
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Run the app from a terminal to capture error output.
+        **Windows:** Open Command Prompt, paste this, press Enter:
+        ```
+        "%LOCALAPPDATA%\git-started\git-started.exe"
+        ```
+        **macOS:** Open Terminal:
+        ```
+        /Applications/git-started.app/Contents/MacOS/git-started
+        ```
+        **Linux:**
+        ```
+        ./git-started.AppImage
+        ```
+      placeholder: Paste terminal output here
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / video
+      description: If applicable, paste a screenshot or recording link.
+      placeholder: Drag and drop images here

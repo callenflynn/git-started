@@ -1,0 +1,42 @@
+name: Feature Request
+description: Suggest an idea for git-started
+labels: [enhancement]
+body:
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Preliminary checks
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem would this feature solve?
+      placeholder: I find it difficult to ...
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What should the feature look like?
+      placeholder: Add a button that ...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      placeholder: A workaround is to ...
+  - type: dropdown
+    id: os
+    attributes:
+      label: Relevant operating system
+      multiple: true
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - All
