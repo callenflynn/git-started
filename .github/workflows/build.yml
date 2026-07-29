@@ -316,6 +316,7 @@ jobs:
             > Auto-updater is active for NSIS (Windows), DMG (macOS), and AppImage (Linux).
           draft: false
           prerelease: true
+          make_latest: true
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.deb
