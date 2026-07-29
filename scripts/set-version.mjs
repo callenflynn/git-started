@@ -18,19 +18,16 @@ import { readFileSync, writeFileSync } from "fs";
 
 function gitVersion() {
   try {
-    // Describe the current commit relative to the nearest tag.
     const desc = execSync("git describe --tags --exact-match", {
       encoding: "utf-8",
     }).trim();
-    // Strip leading "v" if present.
     return desc.replace(/^v/, "");
   } catch {
-    // No tag on this commit. Use a dev version with a numeric pre-release.
-    // MSI requires the pre-release part to contain only digits and be <= 65535.
-    const count = execSync("git rev-list --count HEAD", {
+    const sha = execSync("git rev-parse --short HEAD", {
       encoding: "utf-8",
     }).trim();
-    return `0.0.0-${count}`;
+    // MSI/DEB require X.Y.Z format. Use 0.0.0-{sha} (valid semver pre-release).
+    return `0.0.0-${sha}`;
   }
 }
 
