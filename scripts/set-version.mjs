@@ -17,17 +17,22 @@ import { execSync } from "child_process";
 import { readFileSync, writeFileSync } from "fs";
 
 function gitVersion() {
+  // Allow CI to override the version directly.
+  if (process.env.FORCE_VERSION) {
+    return process.env.FORCE_VERSION;
+  }
+
   try {
     const desc = execSync("git describe --tags --exact-match", {
       encoding: "utf-8",
     }).trim();
     return desc.replace(/^v/, "");
   } catch {
-    const sha = execSync("git rev-parse --short HEAD", {
+    // MSI requires pre-release part to be numeric and <= 65535.
+    const count = execSync("git rev-list --count HEAD", {
       encoding: "utf-8",
     }).trim();
-    // MSI/DEB require X.Y.Z format. Use 0.0.0-{sha} (valid semver pre-release).
-    return `0.0.0-${sha}`;
+    return `0.0.0-${count}`;
   }
 }
 

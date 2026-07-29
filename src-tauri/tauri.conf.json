@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "git-started",
   "version": "0.1.0",
-  "identifier": "com.gitstarted.app",
+  "identifier": "com.gitstarted.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -45,6 +45,13 @@
     ]
   },
   "plugins": {
-    "dialog": {}
+    "dialog": {},
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/Notsk/git-started/releases/latest/download/updates.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUyNTUwRkZGQ0RBNTZENDcKUldSSGJhWE4vdzlWVXZubVhLeXpmaE5ldmd2bHpLNitmeS9mY3RaRkp4eDl0QXU5cUN0S1N4RlgK"
+    }
   }
 }

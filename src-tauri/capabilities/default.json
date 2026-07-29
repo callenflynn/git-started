@@ -5,14 +5,9 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:window:default",
-    "core:window:allow-set-size",
-    "core:window:allow-set-position",
-    "core:window:allow-center",
     "dialog:default",
     "dialog:allow-open",
     "window-state:default",
-    "window-state:allow-save-window-state",
-    "window-state:allow-restore-state"
+    "updater:default"
   ]
 }
