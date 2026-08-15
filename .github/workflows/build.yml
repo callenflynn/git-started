@@ -83,16 +83,16 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATER_PRIVATE_KEY_PASSWORD }}
         run: |
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            FILE=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+            FILE=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -1)
             if [ -n "$FILE" ]; then
               npx @tauri-apps/cli signer sign "$FILE" \
-                > src-tauri/target/universal-apple-darwin/release/bundle/dmg/signature.txt
+                > src-tauri/target/release/bundle/dmg/signature.txt
             fi
           fi
 
       - name: Package .app bundle
         run: |
-          APP=$(ls -d src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -1)
+          APP=$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1)
           (cd "$(dirname "$APP")" && zip -qry "$(basename "$APP").zip" "$(basename "$APP")")
 
       - name: Upload artifacts
@@ -100,9 +100,9 @@ jobs:
         with:
           name: macos-build
           path: |
-            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/universal-apple-darwin/release/bundle/dmg/signature.txt
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.zip
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/dmg/signature.txt
+            src-tauri/target/release/bundle/macos/*.app.zip
           retention-days: 30
 
   build-linux:
