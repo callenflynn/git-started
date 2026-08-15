@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRepoStore } from "./stores/repo-store";
+import { useAddRecentRepo } from "./hooks/useGit";
 import { useLayoutStore } from "./stores/layout-store";
 import { Layout } from "./components/Layout";
 import { ResizeHandle } from "./components/ResizeHandle";
@@ -11,9 +12,21 @@ import { DiffViewer } from "./components/DiffViewer";
 import { CommitDialog } from "./components/CommitDialog";
 import { RebasePanel } from "./components/RebasePanel";
 import { ConflictPanel } from "./components/ConflictPanel";
+import { SettingsDialog } from "./components/SettingsDialog";
 
 export default function App() {
   const repoPath = useRepoStore((s) => s.repoPath);
+  const addRecent = useAddRecentRepo();
+
+  // Persist the open repo to the durable recent-repos file. This also seeds
+  // the list from localStorage on first launch (migration path).
+  useEffect(() => {
+    if (repoPath) {
+      addRecent.mutate(repoPath);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoPath]);
+
   const graphHeight = useLayoutStore((s) => s.graphHeight);
   const setGraphHeight = useLayoutStore((s) => s.setGraphHeight);
   const fileWidth = useLayoutStore((s) => s.fileWidth);
@@ -28,6 +41,7 @@ export default function App() {
   }
 
   return (
+    <>
     <Layout onRebase={handleRebase}>
       {repoPath ? (
         <div className="flex flex-col h-full overflow-hidden">
@@ -88,5 +102,7 @@ export default function App() {
         <WelcomeScreen />
       )}
     </Layout>
+    <SettingsDialog />
+    </>
   );
 }

@@ -1673,6 +1673,154 @@ fn finish_apply(repo: &Repository, message: &str) -> Result<(), String> {
     Ok(())
 }
 
+// ────────────────────── Recent repos & repo discovery ──────────────────────
+
+/// Path to the durable recent-repos file. Lives in the OS config dir
+/// (Roaming AppData on Windows), NOT the app-data dir the uninstaller wipes.
+fn recent_repos_path() -> Result<std::path::PathBuf, String> {
+    let dir = dirs::config_dir().ok_or("Cannot determine config directory")?;
+    Ok(dir.join("git-started").join("recent-repos.json"))
+}
+
+fn load_recent_repos() -> Vec<String> {
+    let path = match recent_repos_path() {
+        Ok(p) => p,
+        Err(_) => return Vec::new(),
+    };
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| Path::new(p).is_dir())
+        .collect()
+}
+
+fn save_recent_repos(repos: &[String]) -> Result<(), String> {
+    let path = recent_repos_path()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(repos).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+/// List recently-opened repositories, most recent first.
+#[tauri::command]
+fn get_recent_repos() -> Vec<String> {
+    load_recent_repos()
+}
+
+/// Remember a repository (deduped, moved to front, capped at 20).
+#[tauri::command]
+fn add_recent_repo(path: String) -> Vec<String> {
+    let mut repos = load_recent_repos();
+    repos.retain(|r| r.as_str() != path.as_str());
+    repos.insert(0, path);
+    repos.truncate(20);
+    let _ = save_recent_repos(&repos);
+    repos
+}
+
+/// Forget a repository from the recent list.
+#[tauri::command]
+fn remove_recent_repo(path: String) -> Vec<String> {
+    let mut repos = load_recent_repos();
+    repos.retain(|r| r.as_str() != path.as_str());
+    let _ = save_recent_repos(&repos);
+    repos
+}
+
+/// Scan the filesystem for git worktrees (dirs containing a `.git` entry).
+/// Slow by design; runs on a background thread.
+#[tauri::command]
+async fn detect_git_repos() -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(scan_for_repos)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn scan_for_repos() -> Result<Vec<String>, String> {
+    let mut roots: Vec<std::path::PathBuf> = Vec::new();
+    #[cfg(target_os = "windows")]
+    {
+        for letter in b'A'..=b'Z' {
+            let root = format!("{}:\\", letter as char);
+            let p = std::path::PathBuf::from(&root);
+            if p.is_dir() {
+                roots.push(p);
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(home) = dirs::home_dir() {
+            roots.push(home);
+        }
+        roots.push(std::path::PathBuf::from("/"));
+    }
+
+    let mut found: Vec<String> = Vec::new();
+    for root in roots {
+        walk_for_repos(&root, &mut found);
+    }
+    found.sort();
+    found.dedup();
+    Ok(found)
+}
+
+fn walk_for_repos(root: &Path, found: &mut Vec<String>) {
+    let mut stack: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue, // permission denied, disconnected drive, etc.
+        };
+        for entry in entries.flatten() {
+            let ft = match entry.file_type() {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            // file_type() does not follow symlinks, so symlinked dirs are
+            // skipped (avoids cycles and double-counting).
+            if !ft.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == ".git" {
+                if let Some(parent) = entry.path().parent() {
+                    if let Some(p) = parent.to_str() {
+                        found.push(p.to_string());
+                    }
+                }
+                continue; // never descend into .git
+            }
+            if is_pruned_dir(&name) {
+                continue;
+            }
+            stack.push(entry.path());
+        }
+    }
+}
+
+fn is_pruned_dir(name: &str) -> bool {
+    matches!(
+        name,
+        // Build/cache trees that never contain repos the user wants to see
+        "node_modules" | "target" | "bin" | "obj" | "dist" | "build" | "out"
+        | ".cache" | ".npm" | ".cargo" | ".rustup" | ".gradle" | ".m2"
+        | ".next" | ".nuxt" | ".angular" | ".venv" | "venv"
+        | "vendor" | "coverage" | ".idea" | ".vscode"
+        // OS/system trees
+        | "$Recycle.Bin" | "System Volume Information" | "Windows"
+        | "Program Files" | "Program Files (x86)" | "ProgramData" | "AppData"
+        | "Recovery" | "PerfLogs" | "Documents and Settings"
+        | "System" | "Library" | "Applications" | "Volumes" | "private"
+        | "proc" | "sys" | "dev" | "run" | "usr" | "lib" | "lib64" | "boot"
+        | "etc" | "opt" | "snap" | "var" | "sbin" | "tmp" | "lost+found"
+    )
+}
+
 // ────────────────────── Entry point ──────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1727,6 +1875,10 @@ pub fn run() {
             save_credential,
             remove_credential,
             get_git_config,
+            get_recent_repos,
+            add_recent_repo,
+            remove_recent_repo,
+            detect_git_repos,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

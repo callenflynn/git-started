@@ -457,3 +457,40 @@ export function useGitConfig(key: string) {
     queryFn: () => git.getGitConfig(key),
   });
 }
+
+// ---- Recent repositories ----
+
+export function useRecentRepos() {
+  return useQuery({
+    queryKey: ["recent-repos"],
+    queryFn: () => git.getRecentRepos(),
+  });
+}
+
+export function useAddRecentRepo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (path: string) => git.addRecentRepo(path),
+    onSuccess: (repos) => {
+      qc.setQueryData(["recent-repos"], repos);
+    },
+  });
+}
+
+export function useRemoveRecentRepo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (path: string) => git.removeRecentRepo(path),
+    onSuccess: (repos) => {
+      qc.setQueryData(["recent-repos"], repos);
+    },
+  });
+}
+
+// ---- Repository discovery ----
+
+export function useDetectGitRepos() {
+  return useMutation({
+    mutationFn: () => git.detectGitRepos(),
+  });
+}

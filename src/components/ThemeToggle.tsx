@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useThemeStore } from "../stores/theme-store";
-import { Sun, Moon, Zap, GitBranch, Sparkles, Check } from "lucide-react";
+import { Sun, Moon, Zap, GitBranch, Sparkles, Coffee, Check } from "lucide-react";
 import type { ThemeName } from "../lib/types";
 
 interface ThemeMeta {
@@ -16,6 +16,10 @@ const themes: ThemeMeta[] = [
   { name: "light", label: "Light", accent: "#ED5001", icon: (s) => <Sun size={s} /> },
   { name: "github-green", label: "GitHub Green", accent: "#0FBF3E", icon: (s) => <GitBranch size={s} /> },
   { name: "copilot", label: "Copilot Purple", accent: "#8534F3", icon: (s) => <Sparkles size={s} /> },
+  { name: "latte", label: "Catppuccin Latte", accent: "#8839ef", icon: (s) => <Coffee size={s} /> },
+  { name: "frappe", label: "Catppuccin Frappé", accent: "#ca9ee6", icon: (s) => <Coffee size={s} /> },
+  { name: "macchiato", label: "Catppuccin Macchiato", accent: "#c6a0f6", icon: (s) => <Coffee size={s} /> },
+  { name: "mocha", label: "Catppuccin Mocha", accent: "#cba6f7", icon: (s) => <Coffee size={s} /> },
 ];
 
 export function ThemeToggle() {
@@ -56,7 +60,7 @@ export function ThemeToggle() {
 
       {open && (
         <div
-          className="absolute right-0 top-full mt-1.5 w-48 rounded-md overflow-hidden z-50"
+          className="absolute right-0 top-full mt-1.5 w-56 rounded-md overflow-hidden z-50"
           style={{
             background: "var(--bg-card)",
             border: "1px solid var(--border-strong)",

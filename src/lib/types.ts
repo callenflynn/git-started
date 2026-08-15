@@ -1,4 +1,13 @@
-export type ThemeName = "dark" | "amoled" | "light" | "github-green" | "copilot";
+export type ThemeName =
+  | "dark"
+  | "amoled"
+  | "light"
+  | "github-green"
+  | "copilot"
+  | "latte"
+  | "frappe"
+  | "macchiato"
+  | "mocha";
 
 export interface RepoInfo {
   path: string;

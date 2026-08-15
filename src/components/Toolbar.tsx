@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useRepoStore } from "../stores/repo-store";
+import { useSettingsStore } from "../stores/settings-store";
 import {
   useBranches,
   usePush,
@@ -26,6 +27,7 @@ import {
   Minus,
   Square,
   Copy,
+  Settings,
 } from "lucide-react";
 
 function getWin() {
@@ -38,6 +40,7 @@ function getWin() {
 
 export function Toolbar() {
   const setRepoPath = useRepoStore((s) => s.setRepoPath);
+  const setSettingsOpen = useSettingsStore((s) => s.setOpen);
   const branches = useBranches();
   const pushMut = usePush();
   const pullMut = usePull();
@@ -220,6 +223,15 @@ export function Toolbar() {
         title="Open another repository"
       >
         <FolderOpen size={14} />
+      </button>
+
+      <button
+        className={btnClass}
+        style={{ background: "var(--bg-card)", color: "var(--text-primary)" }}
+        onClick={() => setSettingsOpen(true)}
+        title="Settings"
+      >
+        <Settings size={14} />
       </button>
 
       <ThemeToggle />

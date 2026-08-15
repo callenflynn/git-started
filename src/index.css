@@ -161,6 +161,130 @@
   --graph-branch7: #F4A876;
 }
 
+/* ======================== CATPPUCCIN LATTE ======================== */
+[data-theme="latte"] {
+  --accent: #8839ef;
+  --accent-hover: #6c2fbd;
+  --accent-glow: rgba(136, 57, 239, 0.2);
+  --bg-primary: #eff1f5;
+  --bg-secondary: #e6e9ef;
+  --bg-card: #dce0e8;
+  --bg-hover: #ccd0da;
+  --bg-glass: rgba(239, 241, 245, 0.75);
+  --bg-nav: rgba(230, 233, 239, 0.85);
+  --text-primary: #4c4f69;
+  --text-secondary: #6c6f85;
+  --text-muted: #8c8fa1;
+  --text-inverse: #eff1f5;
+  --border: rgba(76, 79, 105, 0.1);
+  --border-strong: rgba(76, 79, 105, 0.2);
+  --diff-add-bg: rgba(64, 160, 43, 0.1);
+  --diff-add-line: rgba(64, 160, 43, 0.25);
+  --diff-del-bg: rgba(210, 15, 57, 0.08);
+  --diff-del-line: rgba(210, 15, 57, 0.2);
+  --graph-main: #8839ef;
+  --graph-branch1: #1e66f5;
+  --graph-branch2: #ea76cb;
+  --graph-branch3: #40a02b;
+  --graph-branch4: #fe640b;
+  --graph-branch5: #179299;
+  --graph-branch6: #df8e1d;
+  --graph-branch7: #7287fd;
+}
+
+/* ======================== CATPPUCCIN FRAPPE ======================== */
+[data-theme="frappe"] {
+  --accent: #ca9ee6;
+  --accent-hover: #b489d6;
+  --accent-glow: rgba(202, 158, 230, 0.25);
+  --bg-primary: #303446;
+  --bg-secondary: #292c3c;
+  --bg-card: #414559;
+  --bg-hover: #51576d;
+  --bg-glass: rgba(48, 52, 70, 0.8);
+  --bg-nav: rgba(41, 44, 60, 0.92);
+  --text-primary: #c6d0f5;
+  --text-secondary: #b5bfe2;
+  --text-muted: #838ba7;
+  --text-inverse: #303446;
+  --border: rgba(198, 208, 245, 0.08);
+  --border-strong: rgba(198, 208, 245, 0.16);
+  --diff-add-bg: rgba(166, 209, 137, 0.12);
+  --diff-add-line: rgba(166, 209, 137, 0.28);
+  --diff-del-bg: rgba(231, 130, 132, 0.12);
+  --diff-del-line: rgba(231, 130, 132, 0.28);
+  --graph-main: #ca9ee6;
+  --graph-branch1: #8caaee;
+  --graph-branch2: #f4b8e4;
+  --graph-branch3: #a6d189;
+  --graph-branch4: #ef9f76;
+  --graph-branch5: #81c8be;
+  --graph-branch6: #e5c890;
+  --graph-branch7: #babbf1;
+}
+
+/* ======================== CATPPUCCIN MACCHIATO ======================== */
+[data-theme="macchiato"] {
+  --accent: #c6a0f6;
+  --accent-hover: #a97fdb;
+  --accent-glow: rgba(198, 160, 246, 0.25);
+  --bg-primary: #24273a;
+  --bg-secondary: #1e2030;
+  --bg-card: #363a4f;
+  --bg-hover: #494d64;
+  --bg-glass: rgba(36, 39, 58, 0.8);
+  --bg-nav: rgba(30, 32, 48, 0.92);
+  --text-primary: #cad3f5;
+  --text-secondary: #b8c0e0;
+  --text-muted: #8087a2;
+  --text-inverse: #24273a;
+  --border: rgba(202, 211, 245, 0.08);
+  --border-strong: rgba(202, 211, 245, 0.16);
+  --diff-add-bg: rgba(166, 218, 149, 0.12);
+  --diff-add-line: rgba(166, 218, 149, 0.28);
+  --diff-del-bg: rgba(237, 135, 150, 0.12);
+  --diff-del-line: rgba(237, 135, 150, 0.28);
+  --graph-main: #c6a0f6;
+  --graph-branch1: #8aadf4;
+  --graph-branch2: #f5bde6;
+  --graph-branch3: #a6da95;
+  --graph-branch4: #f5a97f;
+  --graph-branch5: #8bd5ca;
+  --graph-branch6: #eed49f;
+  --graph-branch7: #b7bdf8;
+}
+
+/* ======================== CATPPUCCIN MOCHA ======================== */
+[data-theme="mocha"] {
+  --accent: #cba6f7;
+  --accent-hover: #b489e6;
+  --accent-glow: rgba(203, 166, 247, 0.28);
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #181825;
+  --bg-card: #313244;
+  --bg-hover: #45475a;
+  --bg-glass: rgba(30, 30, 46, 0.8);
+  --bg-nav: rgba(24, 24, 37, 0.94);
+  --text-primary: #cdd6f4;
+  --text-secondary: #bac2de;
+  --text-muted: #7f849c;
+  --text-inverse: #1e1e2e;
+  --border: rgba(205, 214, 244, 0.08);
+  --border-strong: rgba(205, 214, 244, 0.16);
+  --diff-add-bg: rgba(166, 227, 161, 0.12);
+  --diff-add-line: rgba(166, 227, 161, 0.28);
+  --diff-del-bg: rgba(243, 139, 168, 0.12);
+  --diff-del-line: rgba(243, 139, 168, 0.28);
+  --graph-main: #cba6f7;
+  --graph-branch1: #89b4fa;
+  --graph-branch2: #f5c2e7;
+  --graph-branch3: #a6e3a1;
+  --graph-branch4: #fab387;
+  --graph-branch5: #94e2d5;
+  --graph-branch6: #f9e2af;
+  --graph-branch7: #b4befe;
+}
+
 /* ======================== GLOBAL STYLES ======================== */
 * {
   margin: 0;
@@ -254,6 +378,36 @@ pre,
 
 .theme-menu-item:hover {
   background: var(--bg-hover);
+}
+
+/* ======================== MODAL ======================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: modal-fade-in 0.15s ease;
+}
+
+.modal-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  width: 600px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* ======================== COMMIT GRAPH ======================== */

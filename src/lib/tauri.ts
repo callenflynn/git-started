@@ -261,3 +261,23 @@ export async function removeCredential(protocol: string, host: string): Promise<
 export async function getGitConfig(key: string, repoPath?: string): Promise<string | null> {
   return invoke<string | null>("get_git_config", { key, repoPath: repoPath ?? null });
 }
+
+// ---- Recent repositories ----
+
+export async function getRecentRepos(): Promise<string[]> {
+  return invoke<string[]>("get_recent_repos");
+}
+
+export async function addRecentRepo(path: string): Promise<string[]> {
+  return invoke<string[]>("add_recent_repo", { path });
+}
+
+export async function removeRecentRepo(path: string): Promise<string[]> {
+  return invoke<string[]>("remove_recent_repo", { path });
+}
+
+// ---- Repository discovery ----
+
+export async function detectGitRepos(): Promise<string[]> {
+  return invoke<string[]>("detect_git_repos");
+}
