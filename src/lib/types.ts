@@ -125,3 +125,32 @@ export interface SshTestResult {
   success: boolean;
   message: string;
 }
+
+export interface BlameLine {
+  line_number: number;
+  content: string;
+  commit_oid: string;
+  short_oid: string;
+  author: string;
+  timestamp: number;
+}
+
+export interface ReflogEntry {
+  oid: string;
+  short_oid: string;
+  message: string;
+  timestamp: number;
+}
+
+export interface RepoStats {
+  commits: number;
+  branches: number;
+  tags: number;
+  remotes: number;
+  stashes: number;
+  contributors: number;
+  first_commit_time: number;
+  last_commit_time: number;
+  head_branch: string;
+  is_dirty: boolean;
+}

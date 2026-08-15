@@ -4,6 +4,7 @@ import {
   useSearchCommits,
   useCheckout,
   useCherryPick,
+  useCherryPickMany,
   useRevert,
 } from "../hooks/useGit";
 import { useRepoStore } from "../stores/repo-store";
@@ -17,7 +18,7 @@ import {
 } from "../lib/graph";
 import { relativeTime, truncate } from "../lib/format";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
-import { Search, X, GitCommit, GitMerge, Copy, RotateCcw } from "lucide-react";
+import { Search, X, GitCommit, GitMerge, Copy, RotateCcw, Check, ListPlus } from "lucide-react";
 
 const GEOM: GraphGeometry = { rowH: 30, laneW: 28, padLeft: 12, nodeR: 5 };
 
@@ -42,8 +43,10 @@ export function CommitGraph() {
 
   const checkoutMut = useCheckout();
   const cherryPickMut = useCherryPick();
+  const cherryPickManyMut = useCherryPickMany();
   const revertMut = useRevert();
   const [menu, setMenu] = useState<{ x: number; y: number; oid: string } | null>(null);
+  const [marked, setMarked] = useState<string[]>([]);
 
   function handleCommitContext(e: React.MouseEvent, oid: string) {
     e.preventDefault();
@@ -63,6 +66,17 @@ export function CommitGraph() {
           icon: <GitMerge size={14} />,
           onClick: () =>
             cherryPickMut.mutate(menu.oid, { onError: (e) => window.alert(e.message) }),
+        },
+        {
+          label: marked.includes(menu.oid) ? "Unmark for cherry-pick" : "Mark for cherry-pick",
+          icon: marked.includes(menu.oid) ? <Check size={14} /> : <ListPlus size={14} />,
+          onClick: () => {
+            setMarked((prev) =>
+              prev.includes(menu.oid)
+                ? prev.filter((o) => o !== menu.oid)
+                : [...prev, menu.oid]
+            );
+          },
         },
         {
           label: "Revert",
@@ -128,6 +142,39 @@ export function CommitGraph() {
         )}
       </div>
 
+      {marked.length > 0 && (
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 shrink-0"
+          style={{ borderBottom: "1px solid var(--border)", background: "var(--accent)/10" }}
+        >
+          <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
+            {marked.length} commit{marked.length !== 1 ? "s" : ""} marked for cherry-pick
+          </span>
+          <button
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium"
+            style={{ background: "var(--accent)", color: "var(--text-inverse)" }}
+            onClick={() =>
+              cherryPickManyMut.mutate(marked, {
+                onSuccess: () => setMarked([]),
+                onError: (e) => window.alert(e.message),
+              })
+            }
+            disabled={cherryPickManyMut.isPending}
+            title="Cherry-pick the marked commits onto the current branch"
+          >
+            <GitMerge size={12} />
+            Apply
+          </button>
+          <button
+            className="p-0.5 rounded hover:bg-white/10"
+            onClick={() => setMarked([])}
+            title="Clear marks"
+          >
+            <X size={14} style={{ color: "var(--text-muted)" }} />
+          </button>
+        </div>
+      )}
+
       {commits.length === 0 ? (
         <div
           className="flex items-center justify-center h-48 text-sm"
@@ -140,6 +187,7 @@ export function CommitGraph() {
           <CommitSvg
             commits={commits}
             selectedCommit={selectedCommit}
+            marked={new Set(marked)}
             onSelect={selectCommit}
             onContext={handleCommitContext}
           />
@@ -161,11 +209,13 @@ export function CommitGraph() {
 function CommitSvg({
   commits,
   selectedCommit,
+  marked,
   onSelect,
   onContext,
 }: {
   commits: CommitInfo[];
   selectedCommit: string | null;
+  marked: Set<string>;
   onSelect: (oid: string) => void;
   onContext: (e: React.MouseEvent, oid: string) => void;
 }) {
@@ -230,6 +280,7 @@ function CommitSvg({
         const node = layout.nodes.get(commit.oid);
         if (!node) return null;
         const selected = commit.oid === selectedCommit;
+        const isMarked = marked.has(commit.oid);
         const rowY = node.y;
 
         return (
@@ -258,6 +309,19 @@ function CommitSvg({
                 fill="none"
                 stroke="var(--accent)"
                 strokeWidth={1.5}
+              />
+            )}
+
+            {/* Cherry-pick mark */}
+            {isMarked && (
+              <circle
+                cx={node.x}
+                cy={rowY}
+                r={GEOM.nodeR + 7}
+                fill="none"
+                stroke="#A855F7"
+                strokeWidth={2}
+                strokeDasharray="3 2"
               />
             )}
 

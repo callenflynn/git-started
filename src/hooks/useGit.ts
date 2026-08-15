@@ -46,6 +46,19 @@ export function useCherryPick() {
   });
 }
 
+export function useCherryPickMany() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: (oids: string[]) => git.cherryPickMany(repoPath!, oids),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["status", repoPath] });
+      qc.invalidateQueries({ queryKey: ["log", repoPath] });
+      qc.invalidateQueries({ queryKey: ["branches", repoPath] });
+    },
+  });
+}
+
 export function useRevert() {
   const qc = useQueryClient();
   const repoPath = useRepoStore((s) => s.repoPath);
@@ -99,6 +112,15 @@ export function useTags() {
   });
 }
 
+export function useCreateTag() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: (name: string) => git.createTag(repoPath!, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tags", repoPath] }),
+  });
+}
+
 export function useDiff(filePath: string | null, staged: boolean) {
   const repoPath = useRepoStore((s) => s.repoPath);
   return useQuery({
@@ -144,6 +166,25 @@ export function useUnstageAll() {
   const repoPath = useRepoStore((s) => s.repoPath);
   return useMutation({
     mutationFn: () => git.unstageAll(repoPath!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["status", repoPath] }),
+  });
+}
+
+export function useStageLines() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: ({
+      filePath,
+      staged,
+      addLines,
+      delLines,
+    }: {
+      filePath: string;
+      staged: boolean;
+      addLines: number[];
+      delLines: number[];
+    }) => git.stageLines(repoPath!, filePath, staged, addLines, delLines),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["status", repoPath] }),
   });
 }
@@ -196,6 +237,16 @@ export function useCreateBranch() {
   const repoPath = useRepoStore((s) => s.repoPath);
   return useMutation({
     mutationFn: (name: string) => git.createBranch(repoPath!, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["branches", repoPath] }),
+  });
+}
+
+export function useCreateBranchAt() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: ({ name, oid }: { name: string; oid: string }) =>
+      git.createBranchAt(repoPath!, name, oid),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["branches", repoPath] }),
   });
 }
@@ -291,16 +342,21 @@ export function useStartRebase() {
   const repoPath = useRepoStore((s) => s.repoPath);
   return useMutation({
     mutationFn: ({
+      branch,
       onto,
       operations,
+      backup,
     }: {
+      branch: string;
       onto: string;
       operations: import("../lib/types").RebaseCommit[];
-    }) => git.startRebase(repoPath!, onto, operations),
+      backup: boolean;
+    }) => git.startRebase(repoPath!, branch, onto, operations, backup),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["log", repoPath] });
       qc.invalidateQueries({ queryKey: ["branches", repoPath] });
       qc.invalidateQueries({ queryKey: ["rebase-status", repoPath] });
+      qc.invalidateQueries({ queryKey: ["tags", repoPath] });
     },
   });
 }
@@ -492,5 +548,67 @@ export function useRemoveRecentRepo() {
 export function useDetectGitRepos() {
   return useMutation({
     mutationFn: () => git.detectGitRepos(),
+  });
+}
+
+// ---- History & inspection ----
+
+export function useBlame(filePath: string | null) {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["blame", repoPath, filePath],
+    queryFn: () => git.getBlame(repoPath!, filePath!),
+    enabled: !!repoPath && !!filePath,
+  });
+}
+
+export function useFileHistory(filePath: string | null) {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["file-history", repoPath, filePath],
+    queryFn: () => git.getFileHistory(repoPath!, filePath!),
+    enabled: !!repoPath && !!filePath,
+  });
+}
+
+export function useReflog() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["reflog", repoPath],
+    queryFn: () => git.getReflog(repoPath!),
+    enabled: !!repoPath,
+  });
+}
+
+export function useRepoStats() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["repo-stats", repoPath],
+    queryFn: () => git.getRepoStats(repoPath!),
+    enabled: !!repoPath,
+  });
+}
+
+export function useDeleteTag() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: (name: string) => git.deleteTag(repoPath!, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tags", repoPath] }),
+  });
+}
+
+export function useImageVersions(filePath: string | null, staged: boolean) {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["image-versions", repoPath, filePath, staged],
+    queryFn: async () => {
+      const [oldB64, newB64] = await Promise.all([
+        git.readFileVersion(repoPath!, filePath!, "HEAD"),
+        git.readFileVersion(repoPath!, filePath!, staged ? "index" : null),
+      ]);
+      return { old: oldB64, new: newB64 };
+    },
+    enabled: !!repoPath && !!filePath,
   });
 }

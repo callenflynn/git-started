@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSettingsStore } from "../stores/settings-store";
 import { useRepoStore } from "../stores/repo-store";
+import { useLayoutStore, PANEL_IDS, PANEL_LABELS } from "../stores/layout-store";
 import {
   useRecentRepos,
   useAddRecentRepo,
@@ -15,6 +16,10 @@ import {
   Trash2,
   ScanSearch,
   Check,
+  LayoutDashboard,
+  RotateCcw,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 function repoName(path: string): string {
@@ -42,6 +47,16 @@ export function SettingsDialog() {
   const detect = useDetectGitRepos();
 
   const [added, setAdded] = useState<Set<string>>(new Set());
+
+  const panelOrder = useLayoutStore((s) => s.panelOrder);
+  const removePanel = useLayoutStore((s) => s.removePanel);
+  const addPanel = useLayoutStore((s) => s.addPanel);
+  const sidebarVisible = useLayoutStore((s) => s.sidebarVisible);
+  const setSidebarVisible = useLayoutStore((s) => s.setSidebarVisible);
+  const commitBarVisible = useLayoutStore((s) => s.commitBarVisible);
+  const setCommitBarVisible = useLayoutStore((s) => s.setCommitBarVisible);
+  const setEditMode = useLayoutStore((s) => s.setEditMode);
+  const resetLayout = useLayoutStore((s) => s.resetLayout);
 
   if (!open) return null;
 
@@ -116,6 +131,93 @@ export function SettingsDialog() {
             <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
               How often branches and remotes refresh in the background.
             </p>
+          </section>
+
+          {/* Layout */}
+          <section>
+            <h3
+              className="text-xs font-semibold uppercase tracking-wide mb-2"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Layout
+            </h3>
+            <div className="flex flex-wrap gap-1.5">
+              {PANEL_IDS.map((id) => {
+                const shown = panelOrder.includes(id);
+                return (
+                  <button
+                    key={id}
+                    onClick={() => (shown ? removePanel(id) : addPanel(id))}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all"
+                    style={{
+                      background: shown ? "var(--accent)" : "var(--bg-card)",
+                      color: shown ? "var(--text-inverse)" : "var(--text-primary)",
+                      border: "1px solid var(--border-strong)",
+                    }}
+                    title={shown ? "Hide panel" : "Show panel"}
+                  >
+                    {shown ? <Eye size={12} /> : <EyeOff size={12} />}
+                    {PANEL_LABELS[id]}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setSidebarVisible(!sidebarVisible)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all"
+                style={{
+                  background: sidebarVisible ? "var(--accent)" : "var(--bg-card)",
+                  color: sidebarVisible ? "var(--text-inverse)" : "var(--text-primary)",
+                  border: "1px solid var(--border-strong)",
+                }}
+              >
+                {sidebarVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+                Sidebar
+              </button>
+              <button
+                onClick={() => setCommitBarVisible(!commitBarVisible)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all"
+                style={{
+                  background: commitBarVisible ? "var(--accent)" : "var(--bg-card)",
+                  color: commitBarVisible ? "var(--text-inverse)" : "var(--text-primary)",
+                  border: "1px solid var(--border-strong)",
+                }}
+              >
+                {commitBarVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+                Commit Bar
+              </button>
+            </div>
+            <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
+              Toggle panels on and off, or rearrange them by dragging.
+            </p>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => {
+                  setEditMode(true);
+                  setOpen(false);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all"
+                style={{
+                  background: "var(--accent)",
+                  color: "var(--text-inverse)",
+                  border: "1px solid transparent",
+                }}
+              >
+                <LayoutDashboard size={13} />
+                Edit layout…
+              </button>
+              <button
+                onClick={resetLayout}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all"
+                style={{
+                  background: "var(--bg-card)",
+                  color: "var(--text-primary)",
+                  border: "1px solid var(--border-strong)",
+                }}
+              >
+                <RotateCcw size={13} />
+                Reset to default
+              </button>
+            </div>
           </section>
 
           {/* Detect repositories */}

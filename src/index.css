@@ -444,3 +444,200 @@ pre,
 .branch-item.is-head:hover {
   background: var(--accent-glow);
 }
+
+/* ── Layout edit mode ─────────────────────────────────────────── */
+
+.layout-edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-nav);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.layout-edit-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-right: auto;
+}
+
+.layout-edit-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.layout-edit-bar-actions button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.layout-edit-bar-actions button.layout-edit-done {
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: transparent;
+}
+
+.layout-edit-bar-none {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Add-panel dropdown */
+
+.layout-add-menu {
+  position: relative;
+}
+
+.layout-add-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.layout-add-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  min-width: 190px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+}
+
+.layout-add-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.layout-add-dropdown button:hover {
+  background: var(--bg-hover);
+}
+
+.layout-add-empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.layout-slot {
+  outline: 1px dashed var(--border-strong);
+  outline-offset: -1px;
+  transition: box-shadow 0.15s ease, background 0.15s ease,
+    outline-color 0.15s ease, opacity 0.15s ease;
+}
+
+/* The slot being dragged away from is dimmed. */
+.layout-slot-source {
+  opacity: 0.45;
+}
+
+/* The slot a panel is being dragged over becomes the drop target. */
+.layout-slot-drop {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-glow);
+}
+
+.layout-slot-drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.layout-slot-drop-overlay > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--text-inverse);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+}
+
+.layout-slot-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.layout-slot-drag {
+  display: flex;
+  align-items: center;
+  cursor: grab;
+  color: var(--text-muted);
+}
+
+.layout-slot-drag:active {
+  cursor: grabbing;
+}
+
+.layout-slot-title {
+  font-weight: 600;
+  flex: 1;
+}
+
+.layout-slot-remove {
+  display: flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.layout-slot-remove:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.layout-slot-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}

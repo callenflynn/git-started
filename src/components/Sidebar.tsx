@@ -6,6 +6,8 @@ import {
   useStashes,
   useStashPop,
   useTags,
+  useCreateTag,
+  useDeleteTag,
   useSubmodules,
   useSubmoduleUpdate,
   useCredentialInfo,
@@ -138,6 +140,8 @@ export function Sidebar({ onRebase }: SidebarProps) {
   const createBranchMut = useCreateBranch();
   const deleteBranchMut = useDeleteBranch();
   const stashPopMut = useStashPop();
+  const createTagMut = useCreateTag();
+  const deleteTagMut = useDeleteTag();
   const submoduleUpdateMut = useSubmoduleUpdate();
 
   const [newBranch, setNewBranch] = useState("");
@@ -301,21 +305,35 @@ export function Sidebar({ onRebase }: SidebarProps) {
       )}
 
       {/* Tags */}
-      {(tags.data?.length ?? 0) > 0 && (
-        <>
-          <SectionHeader title="Tags">
+      <>
+        <SectionHeader title="Tags" count={tags.data?.length ?? 0}>
+          <button
+            className="p-1 rounded transition-colors hover:bg-white/10"
+            onClick={() => {
+              const name = window.prompt("Tag name:");
+              if (name?.trim()) createTagMut.mutate(name.trim());
+            }}
+            title="Create tag"
+          >
+            <Plus size={14} style={{ color: "var(--text-muted)" }} />
+          </button>
+        </SectionHeader>
+        {(tags.data ?? []).map((t) => (
+          <div key={t.name} className="group flex items-center gap-2 px-3 py-1.5">
             <Tag size={13} style={{ color: "var(--text-muted)" }} />
-          </SectionHeader>
-          {tags.data!.map((t) => (
-            <div key={t.name} className="flex items-center gap-2 px-3 py-1.5">
-              <Tag size={13} style={{ color: "var(--text-muted)" }} />
-              <span className="text-sm truncate" style={{ color: "var(--text-secondary)" }}>
-                {t.name}
-              </span>
-            </div>
-          ))}
-        </>
-      )}
+            <span className="text-sm truncate flex-1" style={{ color: "var(--text-secondary)" }}>
+              {t.name}
+            </span>
+            <button
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-red-500/20"
+              onClick={() => deleteTagMut.mutate(t.name)}
+              title="Delete tag"
+            >
+              <Trash2 size={12} style={{ color: "var(--text-muted)" }} />
+            </button>
+          </div>
+        ))}
+      </>
 
       {/* Submodules */}
       {(submodules.data?.length ?? 0) > 0 && (

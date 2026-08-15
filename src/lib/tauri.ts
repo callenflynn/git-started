@@ -17,6 +17,9 @@ import type {
   SshKeyInfo,
   SshAgentStatus,
   SshTestResult,
+  BlameLine,
+  ReflogEntry,
+  RepoStats,
 } from "./types";
 
 // ---- Repo operations ----
@@ -83,6 +86,10 @@ export async function cherryPick(repoPath: string, oid: string): Promise<void> {
   return invoke("cherry_pick", { repoPath, oid });
 }
 
+export async function cherryPickMany(repoPath: string, oids: string[]): Promise<void> {
+  return invoke("cherry_pick_many", { repoPath, oids });
+}
+
 export async function revertCommit(repoPath: string, oid: string): Promise<void> {
   return invoke("revert", { repoPath, oid });
 }
@@ -105,6 +112,22 @@ export async function unstageAll(repoPath: string): Promise<void> {
   return invoke("unstage_all", { repoPath });
 }
 
+export async function stageLines(
+  repoPath: string,
+  filePath: string,
+  staged: boolean,
+  addLines: number[],
+  delLines: number[]
+): Promise<void> {
+  return invoke("stage_lines", {
+    repoPath,
+    filePath,
+    staged,
+    addLines,
+    delLines,
+  });
+}
+
 // ---- Branches ----
 
 export async function getBranches(repoPath: string): Promise<BranchInfo[]> {
@@ -117,6 +140,10 @@ export async function checkout(repoPath: string, target: string): Promise<void> 
 
 export async function createBranch(repoPath: string, name: string): Promise<void> {
   return invoke("create_branch", { repoPath, name });
+}
+
+export async function createBranchAt(repoPath: string, name: string, oid: string): Promise<void> {
+  return invoke("create_branch_at", { repoPath, name, oid });
 }
 
 export async function deleteBranch(repoPath: string, name: string): Promise<void> {
@@ -181,10 +208,12 @@ export async function getRebaseStatus(repoPath: string): Promise<RebaseStatus> {
 
 export async function startRebase(
   repoPath: string,
+  branch: string,
   onto: string,
-  operations: RebaseCommit[]
+  operations: RebaseCommit[],
+  backup: boolean
 ): Promise<void> {
-  return invoke("start_rebase", { repoPath, onto, operations });
+  return invoke("start_rebase", { repoPath, branch, onto, operations, backup });
 }
 
 export async function rebaseContinue(repoPath: string): Promise<void> {
@@ -260,6 +289,39 @@ export async function removeCredential(protocol: string, host: string): Promise<
 
 export async function getGitConfig(key: string, repoPath?: string): Promise<string | null> {
   return invoke<string | null>("get_git_config", { key, repoPath: repoPath ?? null });
+}
+
+// ---- History & inspection ----
+
+export async function getBlame(repoPath: string, filePath: string): Promise<BlameLine[]> {
+  return invoke<BlameLine[]>("get_blame", { repoPath, filePath });
+}
+
+export async function getFileHistory(
+  repoPath: string,
+  filePath: string
+): Promise<CommitInfo[]> {
+  return invoke<CommitInfo[]>("get_file_history", { repoPath, filePath });
+}
+
+export async function getReflog(repoPath: string): Promise<ReflogEntry[]> {
+  return invoke<ReflogEntry[]>("get_reflog", { repoPath });
+}
+
+export async function getRepoStats(repoPath: string): Promise<RepoStats> {
+  return invoke<RepoStats>("get_repo_stats", { repoPath });
+}
+
+export async function readFileVersion(
+  repoPath: string,
+  filePath: string,
+  revision: string | null
+): Promise<string | null> {
+  return invoke<string | null>("read_file_version", { repoPath, filePath, revision });
+}
+
+export async function deleteTag(repoPath: string, name: string): Promise<void> {
+  return invoke("delete_tag", { repoPath, name });
 }
 
 // ---- Recent repositories ----

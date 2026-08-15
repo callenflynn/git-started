@@ -1,8 +1,6 @@
 import { useRepoStore } from "../stores/repo-store";
-import { useLayoutStore } from "../stores/layout-store";
 import { useLog, useCommitDiff } from "../hooks/useGit";
 import { relativeTime } from "../lib/format";
-import { ResizeHandle } from "./ResizeHandle";
 import { GitBranch, GitCommit, Tag, User, Clock, X, FileText } from "lucide-react";
 
 function statusLetter(status: string): string {
@@ -39,31 +37,28 @@ function statusColor(status: string): string {
 export function CommitDetail() {
   const selectedCommit = useRepoStore((s) => s.selectedCommit);
   const selectCommit = useRepoStore((s) => s.selectCommit);
-  const detailWidth = useLayoutStore((s) => s.detailWidth);
-  const setDetailWidth = useLayoutStore((s) => s.setDetailWidth);
   const log = useLog();
   const commit = log.data?.find((c) => c.oid === selectedCommit);
   const files = useCommitDiff(selectedCommit);
 
-  if (!selectedCommit || !commit) return null;
+  if (!selectedCommit || !commit) {
+    return (
+      <div
+        className="flex-1 min-h-0 flex items-center justify-center text-sm"
+        style={{ color: "var(--text-muted)", background: "var(--bg-secondary)" }}
+      >
+        Select a commit to view its details.
+      </div>
+    );
+  }
 
   const date = new Date(commit.timestamp * 1000);
 
   return (
-    <>
-      <ResizeHandle
-        direction="vertical"
-        onDelta={(d) => setDetailWidth((w) => w + d)}
-        title="Resize commit details"
-      />
-      <aside
-        className="shrink-0 flex flex-col overflow-y-auto"
-        style={{
-          width: detailWidth,
-          background: "var(--bg-secondary)",
-          borderLeft: "1px solid var(--border)",
-        }}
-      >
+    <aside
+      className="flex-1 min-h-0 flex flex-col overflow-y-auto"
+      style={{ background: "var(--bg-secondary)" }}
+    >
       <div
         className="flex items-center justify-between px-3 py-2 sticky top-0 z-10"
         style={{ background: "var(--bg-secondary)", borderBottom: "1px solid var(--border)" }}
@@ -185,7 +180,6 @@ export function CommitDetail() {
           )}
         </div>
       </div>
-      </aside>
-    </>
+    </aside>
   );
 }

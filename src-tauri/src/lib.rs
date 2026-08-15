@@ -1,3 +1,4 @@
+use base64::Engine as _;
 use git2::{Repository, Sort};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -115,6 +116,38 @@ pub struct CredentialInfo {
     helper: String,
     storage: String,
     configured: bool,
+}
+
+#[derive(Serialize)]
+pub struct BlameLine {
+    line_number: u32,
+    content: String,
+    commit_oid: String,
+    short_oid: String,
+    author: String,
+    timestamp: i64,
+}
+
+#[derive(Serialize)]
+pub struct ReflogEntry {
+    oid: String,
+    short_oid: String,
+    message: String,
+    timestamp: i64,
+}
+
+#[derive(Serialize)]
+pub struct RepoStats {
+    commits: u64,
+    branches: u64,
+    tags: u64,
+    remotes: u64,
+    stashes: u64,
+    contributors: u64,
+    first_commit_time: i64,
+    last_commit_time: i64,
+    head_branch: String,
+    is_dirty: bool,
 }
 
 // ────────────────────── Helper functions ──────────────────────
@@ -268,6 +301,10 @@ fn get_diff(repo_path: String, file_path: String, staged: bool) -> Result<String
 
     let mut diff_opts = git2::DiffOptions::new();
     diff_opts.pathspec(&file_path);
+    // Show untracked files as additions so line-staging and diffing work for
+    // brand-new files too (git2 excludes them by default).
+    diff_opts.include_untracked(true);
+    diff_opts.recurse_untracked_dirs(true);
 
     let diff = if staged {
         let head = repo.head().and_then(|r| r.peel_to_commit()).ok();
@@ -549,6 +586,186 @@ fn unstage_all(repo_path: String) -> Result<(), String> {
     Ok(())
 }
 
+// ────────────────────── Line-level staging ──────────────────────
+
+/// Stage (staged=false) or unstage (staged=true) individual lines of a file.
+/// `add_lines` are 1-based line numbers on the *new* side (the `+` lines in
+/// the diff); `del_lines` are 1-based line numbers on the *old* side (the `-`
+/// lines). The index is rewritten to the old content plus the chosen subset of
+/// changes, so unrelated hunks stay untouched.
+#[tauri::command]
+fn stage_lines(
+    repo_path: String,
+    file_path: String,
+    staged: bool,
+    add_lines: Vec<u32>,
+    del_lines: Vec<u32>,
+) -> Result<(), String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+
+    let old = read_blob_bytes(&repo, &file_path, "HEAD");
+    let new = if staged {
+        read_blob_bytes(&repo, &file_path, "index")
+    } else {
+        std::fs::read(Path::new(&repo_path).join(&file_path)).ok()
+    };
+
+    let old_lines = split_lines(old.as_deref().unwrap_or(&[]));
+    let new_lines = split_lines(new.as_deref().unwrap_or(&[]));
+
+    // LCS is O(n*m); bail out on pathological inputs instead of hanging.
+    if old_lines.len().saturating_mul(new_lines.len()) > 2_000_000 {
+        return Err(
+            "File is too large for line-level staging. Stage the whole file instead.".to_string(),
+        );
+    }
+
+    let sel_add: std::collections::HashSet<u32> = add_lines.into_iter().collect();
+    let sel_del: std::collections::HashSet<u32> = del_lines.into_iter().collect();
+
+    // Stage = keep selected; unstage = revert selected (keep the rest).
+    let target = partial_apply(&old_lines, &new_lines, &sel_add, &sel_del, !staged);
+
+    write_partial_to_index(&repo, &file_path, target.as_bytes())
+}
+
+/// Raw bytes of a file at a revision: "HEAD" = HEAD tree, "index" = staged
+/// blob. Returns None when the path is absent.
+fn read_blob_bytes(repo: &Repository, file_path: &str, revision: &str) -> Option<Vec<u8>> {
+    match revision {
+        "HEAD" => {
+            let head = repo.head().ok()?;
+            let commit = head.peel_to_commit().ok()?;
+            let tree = commit.tree().ok()?;
+            let entry = tree.get_path(Path::new(file_path)).ok()?;
+            entry.to_object(repo).ok()?.as_blob().map(|b| b.content().to_vec())
+        }
+        "index" => {
+            let index = repo.index().ok()?;
+            let entry = index.get_path(Path::new(file_path), 0)?;
+            repo.find_blob(entry.id).ok().map(|b| b.content().to_vec())
+        }
+        _ => None,
+    }
+}
+
+/// Split raw bytes into lines, preserving each line's trailing newline so the
+/// result can be re-joined losslessly.
+fn split_lines(bytes: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(bytes)
+        .split_inclusive('\n')
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Replay a subset of the old→new line changes. `keep_selected` = stage the
+/// selection; false = unstage it (revert the selection, keep the rest).
+fn partial_apply(
+    old: &[String],
+    new: &[String],
+    sel_add: &std::collections::HashSet<u32>,
+    sel_del: &std::collections::HashSet<u32>,
+    keep_selected: bool,
+) -> String {
+    let n = old.len();
+    let m = new.len();
+
+    // Longest-common-subsequence table aligns old and new lines.
+    let mut dp = vec![vec![0usize; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            dp[i][j] = if old[i] == new[j] {
+                dp[i + 1][j + 1] + 1
+            } else {
+                dp[i + 1][j].max(dp[i][j + 1])
+            };
+        }
+    }
+
+    let mut out: Vec<&str> = Vec::new();
+    let (mut i, mut j) = (0usize, 0usize);
+    while i < n && j < m {
+        if old[i] == new[j] {
+            out.push(&old[i]);
+            i += 1;
+            j += 1;
+        } else if dp[i + 1][j] >= dp[i][j + 1] {
+            // old[i] was deleted
+            let selected = sel_del.contains(&((i + 1) as u32));
+            let remove = if keep_selected { selected } else { !selected };
+            if !remove {
+                out.push(&old[i]);
+            }
+            i += 1;
+        } else {
+            // new[j] was added
+            let selected = sel_add.contains(&((j + 1) as u32));
+            let keep = if keep_selected { selected } else { !selected };
+            if keep {
+                out.push(&new[j]);
+            }
+            j += 1;
+        }
+    }
+    while i < n {
+        let selected = sel_del.contains(&((i + 1) as u32));
+        let remove = if keep_selected { selected } else { !selected };
+        if !remove {
+            out.push(&old[i]);
+        }
+        i += 1;
+    }
+    while j < m {
+        let selected = sel_add.contains(&((j + 1) as u32));
+        let keep = if keep_selected { selected } else { !selected };
+        if keep {
+            out.push(&new[j]);
+        }
+        j += 1;
+    }
+    out.concat()
+}
+
+/// Write `target` as the file's staged blob (add or update the index entry),
+/// removing the entry when the partial result is empty.
+fn write_partial_to_index(repo: &Repository, file_path: &str, target: &[u8]) -> Result<(), String> {
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+    let in_index = index.get_path(Path::new(file_path), 0).is_some();
+
+    if target.is_empty() {
+        if in_index {
+            index
+                .remove_path(Path::new(file_path))
+                .map_err(|e| e.to_string())?;
+        }
+        // else: new file with nothing selected — nothing to stage.
+    } else {
+        let blob_oid = repo.blob(target).map_err(|e| e.to_string())?;
+        if let Some(mut entry) = index.get_path(Path::new(file_path), 0) {
+            entry.id = blob_oid;
+            entry.file_size = target.len() as u32;
+            index.add(&entry).map_err(|e| e.to_string())?;
+        } else {
+            let entry = git2::IndexEntry {
+                ctime: git2::IndexTime::new(0, 0),
+                mtime: git2::IndexTime::new(0, 0),
+                dev: 0,
+                ino: 0,
+                mode: 0o100644,
+                uid: 0,
+                gid: 0,
+                file_size: target.len() as u32,
+                id: blob_oid,
+                flags: 0,
+                flags_extended: 0,
+                path: file_path.as_bytes().to_vec(),
+            };
+            index.add(&entry).map_err(|e| e.to_string())?;
+        }
+    }
+    index.write().map_err(|e| e.to_string())
+}
+
 // ────────────────────── Branch commands ──────────────────────
 
 /// List all local and remote branches.
@@ -648,6 +865,18 @@ fn create_branch(repo_path: String, name: String) -> Result<(), String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
     let head = repo.head().and_then(|h| h.peel_to_commit()).map_err(|e| e.to_string())?;
     repo.branch(&name, &head, false).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Create a branch pointing at an arbitrary commit (used by reflog recovery).
+#[tauri::command]
+fn create_branch_at(repo_path: String, name: String, oid: String) -> Result<(), String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let commit = repo
+        .revparse_single(&oid)
+        .and_then(|o| o.peel_to_commit())
+        .map_err(|e| e.to_string())?;
+    repo.branch(&name, &commit, false).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -943,80 +1172,128 @@ fn get_rebase_status(repo_path: String) -> Result<RebaseStatus, String> {
     })
 }
 
-/// Start an interactive rebase. You can specify an action for each commit.
-/// The actions are: pick, squash, fixup, reword, edit, or drop.
-/// This uses the command line interface (`git rebase -i`) because the libgit2 library
-/// does not let you assign custom actions to commits.
+/// Start an interactive rebase that actually applies the chosen per-commit
+/// actions (pick/squash/fixup/drop/edit) and their ordering. We shell out to
+/// `git rebase -i` because libgit2 cannot script a todo list; a tiny temp
+/// "sequence editor" script overwrites git's generated todo with ours.
 #[tauri::command]
 fn start_rebase(
     repo_path: String,
+    branch: String,
     onto: String,
     operations: Vec<RebaseCommit>,
+    backup: bool,
 ) -> Result<(), String> {
-    // Build the todo list for git rebase -i.
-    let mut todo_lines: Vec<String> = Vec::new();
-    for op in &operations {
-        let oid = &op.oid;
-        let line = match op.operation.as_str() {
-            "squash" | "s" => {
-                if let Some(ref new_msg) = op.new_message {
-                    format!("s {} {}", oid, new_msg.replace('\n', " "))
-                } else {
-                    format!("s {}", oid)
-                }
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+
+    // Optionally tag the branch tip before rewriting history so the pre-rebase
+    // state stays reachable.
+    if backup {
+        if let Ok(oid) = repo
+            .refname_to_id(&format!("refs/heads/{}", branch))
+            .or_else(|_| repo.refname_to_id(&format!("refs/remotes/origin/{}", branch)))
+        {
+            if let Ok(obj) = repo.find_object(oid, None) {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let tag = format!(
+                    "backup/{}-{}",
+                    branch.replace('/', "-").replace('\\', "-"),
+                    ts
+                );
+                let _ = repo.tag_lightweight(&tag, &obj, false);
             }
-            "fixup" | "f" => format!("f {}", oid),
-            "reword" | "r" => {
-                if let Some(ref new_msg) = op.new_message {
-                    format!("r {} {}", oid, new_msg.replace('\n', " "))
-                } else {
-                    format!("r {}", oid)
-                }
-            }
-            "edit" | "e" => format!("e {}", oid),
-            "drop" | "d" => format!("d {}", oid),
-            _ => format!("pick {}", oid),
-        };
-        todo_lines.push(line);
+        }
     }
 
-    let todo = todo_lines.join("\n");
+    let mut todo_lines: Vec<String> = Vec::new();
+    for op in &operations {
+        let cmd = match op.operation.as_str() {
+            "squash" | "s" => "squash",
+            "fixup" | "f" => "fixup",
+            "reword" | "r" => "reword",
+            "edit" | "e" => "edit",
+            "drop" | "d" => "drop",
+            _ => "pick",
+        };
+        todo_lines.push(format!("{} {}", cmd, op.oid));
+    }
+    let todo = format!("{}\n", todo_lines.join("\n"));
 
-    // Write the todo file and invoke rebase.
-    use std::io::Write;
+    let script = write_sequence_editor(&todo)?;
     let output = Command::new("git")
         .current_dir(&repo_path)
         .args([
             "rebase",
             "-i",
-            &onto,
             "--no-autosquash",
-            "--quiet",
+            "--onto",
+            &onto,
+            &onto,
+            &branch,
         ])
-        .env("GIT_SEQUENCE_EDITOR", "cat") // Just show the todo, don't edit.
+        .env("GIT_SEQUENCE_EDITOR", &script)
+        .env("GIT_EDITOR", "true") // accept default messages for squash/reword
         .output()
         .map_err(|e| format!("Failed to start rebase: {}", e))?;
 
-    // If rebase needs manual todo editing, we write our own todo.
-    if !output.status.success() {
-        // Try the manual approach: init rebase, write todo, continue.
-        let rebase_dir = Path::new(&repo_path).join(".git").join("rebase-merge");
-        if !rebase_dir.exists() {
-            return Err(format!(
-                "Rebase could not start. Git output: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
+    // Best-effort cleanup of the temp files.
+    let _ = std::fs::remove_file(&script);
+    let _ = std::fs::remove_file(sequence_editor_todo_path());
 
-        let todo_path = rebase_dir.join("git-rebase-todo");
-        let mut f = std::fs::File::create(&todo_path)
-            .map_err(|e| format!("Failed to write todo file: {}", e))?;
-        f.write_all(todo.as_bytes())
-            .map_err(|e| format!("Failed to write todo: {}", e))?;
-        f.flush().map_err(|e| format!("Failed to flush todo: {}", e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Rebase failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+fn sequence_editor_todo_path() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!(
+        "git-started-rebase-todo-{}.txt",
+        std::process::id()
+    ))
+}
+
+/// Write the interactive-rebase todo to a temp file and return the path of a
+/// tiny script git invokes as its sequence editor (`<script> <todo-path>`). The
+/// script overwrites git's generated todo with ours. `.cmd` on Windows, `.sh`
+/// elsewhere.
+fn write_sequence_editor(todo: &str) -> Result<std::path::PathBuf, String> {
+    let dir = std::env::temp_dir();
+    let todo_path = sequence_editor_todo_path();
+    std::fs::write(&todo_path, todo).map_err(|e| e.to_string())?;
+
+    #[cfg(windows)]
+    let script_path = dir.join(format!("git-started-seq-editor-{}.cmd", std::process::id()));
+    #[cfg(not(windows))]
+    let script_path = dir.join(format!("git-started-seq-editor-{}.sh", std::process::id()));
+
+    #[cfg(windows)]
+    {
+        let content = format!(
+            "@echo off\r\ncopy /y \"{}\" \"%~1\" >nul\r\n",
+            todo_path.display()
+        );
+        std::fs::write(&script_path, content).map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(windows))]
+    {
+        let content = format!("#!/bin/sh\ncp \"{}\" \"$1\"\n", todo_path.display());
+        std::fs::write(&script_path, content).map_err(|e| e.to_string())?;
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script_path)
+            .map_err(|e| e.to_string())?
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).map_err(|e| e.to_string())?;
     }
 
-    Ok(())
+    Ok(script_path)
 }
 
 /// Continue a rebase that is in progress (after resolving conflicts).
@@ -1648,6 +1925,31 @@ fn revert(repo_path: String, oid: String) -> Result<(), String> {
     finish_apply(&repo, &message)
 }
 
+/// Cherry-pick several commits onto HEAD in chronological order, committing
+/// each clean result and stopping at the first conflict (which is left staged
+/// for the conflict panel).
+#[tauri::command]
+fn cherry_pick_many(repo_path: String, oids: Vec<String>) -> Result<(), String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+
+    let mut commits: Vec<git2::Commit> = Vec::new();
+    for oid_str in &oids {
+        let oid = git2::Oid::from_str(oid_str).map_err(|e| e.to_string())?;
+        commits.push(repo.find_commit(oid).map_err(|e| e.to_string())?);
+    }
+    commits.sort_by_key(|c| c.time().seconds());
+
+    for commit in commits {
+        repo.cherrypick(&commit, None).map_err(|e| e.to_string())?;
+        let message = commit.message().unwrap_or("");
+        let short = commit.id().to_string();
+        let short = &short[..7.min(short.len())];
+        finish_apply(&repo, message)
+            .map_err(|e| format!("Cherry-pick stopped at {}: {}", short, e))?;
+    }
+    Ok(())
+}
+
 /// Commit the result of a cherry-pick/revert, or leave conflicts for the user.
 fn finish_apply(repo: &Repository, message: &str) -> Result<(), String> {
     let mut index = repo.index().map_err(|e| e.to_string())?;
@@ -1670,6 +1972,245 @@ fn finish_apply(repo: &Repository, message: &str) -> Result<(), String> {
     repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head_commit])
         .map_err(|e| e.to_string())?;
 
+    Ok(())
+}
+
+// ────────────────────── History & inspection ──────────────────────
+
+fn short_hex(oid: git2::Oid) -> String {
+    let hex = oid.to_string();
+    hex[..7.min(hex.len())].to_string()
+}
+
+fn commit_to_info(commit: &git2::Commit) -> CommitInfo {
+    CommitInfo {
+        oid: commit.id().to_string(),
+        short_oid: short_hex(commit.id()),
+        message: commit
+            .message()
+            .unwrap_or("")
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string(),
+        author: commit.author().name().unwrap_or("").to_string(),
+        author_email: commit.author().email().unwrap_or("").to_string(),
+        timestamp: commit.time().seconds(),
+        parent_oids: commit.parent_ids().map(oid_to_hex).collect(),
+        branch_names: Vec::new(),
+    }
+}
+
+fn commit_touches_path(
+    repo: &Repository,
+    commit: &git2::Commit,
+    path: &Path,
+) -> Result<bool, String> {
+    let tree = commit.tree().map_err(|e| e.to_string())?;
+    if commit.parent_count() == 0 {
+        return Ok(tree.get_path(path).is_ok());
+    }
+    let parent_tree = commit
+        .parent(0)
+        .ok()
+        .and_then(|p| p.tree().ok())
+        .ok_or("Cannot read parent tree")?;
+    let mut opts = git2::DiffOptions::new();
+    opts.pathspec(path.to_string_lossy().as_ref());
+    let diff = repo
+        .diff_tree_to_tree(Some(&parent_tree), Some(&tree), Some(&mut opts))
+        .map_err(|e| e.to_string())?;
+    Ok(diff.deltas().len() > 0)
+}
+
+/// Line-by-line blame for a file at HEAD.
+#[tauri::command]
+fn get_blame(repo_path: String, file_path: String) -> Result<Vec<BlameLine>, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let path = Path::new(&file_path);
+
+    let tree = repo.head().and_then(|h| h.peel_to_tree()).map_err(|e| e.to_string())?;
+    let text = tree
+        .get_path(path)
+        .ok()
+        .and_then(|e| e.to_object(&repo).ok())
+        .and_then(|o| o.as_blob().map(|b| b.content().to_vec()))
+        .map(|b| String::from_utf8_lossy(&b).to_string())
+        .unwrap_or_default();
+    let lines: Vec<&str> = text.split('\n').collect();
+
+    let blame = repo.blame_file(path, None).map_err(|e| e.to_string())?;
+    let mut result = Vec::new();
+    let mut line_index = 0usize;
+    for hunk in blame.iter() {
+        let commit_id = hunk.final_commit_id();
+        let oid = commit_id.to_string();
+        let short = short_hex(commit_id);
+        let author = hunk
+            .final_signature()
+            .map(|s| s.name().unwrap_or("").to_string())
+            .unwrap_or_default();
+        let timestamp = hunk.final_signature().map(|s| s.when().seconds()).unwrap_or(0);
+        for _ in 0..hunk.lines_in_hunk() {
+            result.push(BlameLine {
+                line_number: (line_index + 1) as u32,
+                content: lines.get(line_index).copied().unwrap_or("").to_string(),
+                commit_oid: oid.clone(),
+                short_oid: short.clone(),
+                author: author.clone(),
+                timestamp,
+            });
+            line_index += 1;
+        }
+    }
+    Ok(result)
+}
+
+/// Commits that changed a file or directory, newest first.
+#[tauri::command]
+fn get_file_history(
+    repo_path: String,
+    file_path: String,
+    max: Option<usize>,
+) -> Result<Vec<CommitInfo>, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let path = Path::new(&file_path);
+
+    let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
+    revwalk.set_sorting(Sort::TIME).map_err(|e| e.to_string())?;
+    revwalk.push_head().map_err(|e| e.to_string())?;
+
+    let limit = max.unwrap_or(100);
+    let mut result = Vec::new();
+    for oid in revwalk {
+        let oid = oid.map_err(|e| e.to_string())?;
+        let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+        if !commit_touches_path(&repo, &commit, path)? {
+            continue;
+        }
+        result.push(commit_to_info(&commit));
+        if result.len() >= limit {
+            break;
+        }
+    }
+    Ok(result)
+}
+
+/// HEAD reflog entries, newest first.
+#[tauri::command]
+fn get_reflog(repo_path: String) -> Result<Vec<ReflogEntry>, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let reflog = repo.reflog("HEAD").map_err(|e| e.to_string())?;
+    let mut result = Vec::new();
+    for entry in reflog.iter().take(100) {
+        result.push(ReflogEntry {
+            oid: entry.id_new().to_string(),
+            short_oid: short_hex(entry.id_new()),
+            message: entry.message().ok().flatten().unwrap_or("").to_string(),
+            timestamp: entry.committer().when().seconds(),
+        });
+    }
+    Ok(result)
+}
+
+/// Aggregate repository statistics for the summary view.
+#[tauri::command]
+fn get_repo_stats(repo_path: String) -> Result<RepoStats, String> {
+    let mut repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+
+    let mut commits = 0u64;
+    let mut first_time = 0i64;
+    let mut last_time = 0i64;
+    let mut contributors: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Ok(head) = repo.head() {
+        if let (Ok(mut revwalk), Some(target)) = (repo.revwalk(), head.target()) {
+            let _ = revwalk.push(target);
+            for oid in revwalk.flatten() {
+                if commits >= 200_000 {
+                    break;
+                }
+                if let Ok(commit) = repo.find_commit(oid) {
+                    let t = commit.time().seconds();
+                    if last_time == 0 {
+                        last_time = t;
+                    }
+                    first_time = t;
+                    commits += 1;
+                    if let Ok(email) = commit.author().email() {
+                        contributors.insert(email.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let branches = repo.branches(None).map(|it| it.count() as u64).unwrap_or(0);
+    let tags = repo.tag_names(None).map(|t| t.len() as u64).unwrap_or(0);
+    let remotes = repo.remotes().map(|r| r.len() as u64).unwrap_or(0);
+    let mut stashes = 0u64;
+    let _ = repo.stash_foreach(|_, _, _| {
+        stashes += 1;
+        true
+    });
+
+    let head_branch = repo
+        .head()
+        .ok()
+        .and_then(|h| h.shorthand().ok().map(String::from))
+        .unwrap_or_else(|| "HEAD".to_string());
+    let mut opts = git2::StatusOptions::new();
+    let is_dirty = repo.statuses(Some(&mut opts)).map(|s| !s.is_empty()).unwrap_or(false);
+
+    Ok(RepoStats {
+        commits,
+        branches,
+        tags,
+        remotes,
+        stashes,
+        contributors: contributors.len() as u64,
+        first_commit_time: first_time,
+        last_commit_time: last_time,
+        head_branch,
+        is_dirty,
+    })
+}
+
+/// Read a file's bytes at a revision as base64 (for image diffs / file-at-commit).
+/// `revision`: None = working tree, "index" = staged, anything else = a rev.
+#[tauri::command]
+fn read_file_version(
+    repo_path: String,
+    file_path: String,
+    revision: Option<String>,
+) -> Result<Option<String>, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let bytes: Option<Vec<u8>> = match revision.as_deref() {
+        None => std::fs::read(Path::new(&repo_path).join(&file_path)).ok(),
+        Some("index") => {
+            let index = repo.index().map_err(|e| e.to_string())?;
+            index
+                .get_path(Path::new(&file_path), 0)
+                .and_then(|e| repo.find_blob(e.id).ok())
+                .map(|b| b.content().to_vec())
+        }
+        Some(rev) => {
+            let obj = repo.revparse_single(rev).map_err(|e| e.to_string())?;
+            let commit = obj.peel_to_commit().map_err(|e| e.to_string())?;
+            let tree = commit.tree().map_err(|e| e.to_string())?;
+            tree.get_path(Path::new(&file_path))
+                .ok()
+                .and_then(|e| e.to_object(&repo).ok())
+                .and_then(|o| o.as_blob().map(|b| b.content().to_vec()))
+        }
+    };
+    Ok(bytes.map(|b| base64::engine::general_purpose::STANDARD.encode(&b)))
+}
+
+/// Delete a tag.
+#[tauri::command]
+fn delete_tag(repo_path: String, name: String) -> Result<(), String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    repo.tag_delete(&name).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1837,15 +2378,18 @@ pub fn run() {
             get_log,
             get_commit_diff,
             cherry_pick,
+            cherry_pick_many,
             revert,
             do_commit,
             stage_file,
             unstage_file,
             stage_all,
             unstage_all,
+            stage_lines,
             get_branches,
             checkout_branch,
             create_branch,
+            create_branch_at,
             delete_branch,
             do_push,
             do_pull,
@@ -1879,7 +2423,52 @@ pub fn run() {
             add_recent_repo,
             remove_recent_repo,
             detect_git_repos,
+            get_blame,
+            get_file_history,
+            get_reflog,
+            get_repo_stats,
+            read_file_version,
+            delete_tag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn hs(v: &[u32]) -> HashSet<u32> {
+        v.iter().copied().collect()
+    }
+
+    #[test]
+    fn stage_only_the_modified_line() {
+        let old = split_lines(b"one\ntwo\nthree\n");
+        let new = split_lines(b"one\nTWO\nthree\nfour\n");
+        // Stage the two->TWO edit (old line 2 removed, new line 2 added) but
+        // leave the trailing "four" addition unstaged.
+        let out = partial_apply(&old, &new, &hs(&[2]), &hs(&[2]), true);
+        assert_eq!(out, "one\nTWO\nthree\n");
+    }
+
+    #[test]
+    fn stage_only_the_added_line() {
+        let old = split_lines(b"one\ntwo\nthree\n");
+        let new = split_lines(b"one\nTWO\nthree\nfour\n");
+        // Stage only the appended "four" line.
+        let out = partial_apply(&old, &new, &hs(&[4]), &HashSet::new(), true);
+        assert_eq!(out, "one\ntwo\nthree\nfour\n");
+    }
+
+    #[test]
+    fn unstage_reverts_selected_line() {
+        let old = split_lines(b"one\ntwo\nthree\n");
+        let new = split_lines(b"one\nTWO\nthree\nfour\n");
+        // Unstaging selected lines keeps everything EXCEPT the selection:
+        // selecting the two->TWO edit means "revert that edit".
+        let out = partial_apply(&old, &new, &hs(&[2]), &hs(&[2]), false);
+        assert_eq!(out, "one\ntwo\nthree\nfour\n");
+    }
 }

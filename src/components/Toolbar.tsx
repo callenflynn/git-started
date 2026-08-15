@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useRepoStore } from "../stores/repo-store";
 import { useSettingsStore } from "../stores/settings-store";
+import { useDialogStore } from "../stores/dialog-store";
 import {
   useBranches,
   usePush,
@@ -28,6 +29,8 @@ import {
   Square,
   Copy,
   Settings,
+  BarChart3,
+  History,
 } from "lucide-react";
 
 function getWin() {
@@ -41,6 +44,7 @@ function getWin() {
 export function Toolbar() {
   const setRepoPath = useRepoStore((s) => s.setRepoPath);
   const setSettingsOpen = useSettingsStore((s) => s.setOpen);
+  const openDialog = useDialogStore((s) => s.openDialog);
   const branches = useBranches();
   const pushMut = usePush();
   const pullMut = usePull();
@@ -71,10 +75,6 @@ export function Toolbar() {
     };
   }, []);
 
-  function toggleMaximize() {
-    getWin()?.toggleMaximize();
-  }
-
   async function handleOpen() {
     const selected = await open({ directory: true, multiple: false });
     if (typeof selected === "string") {
@@ -102,18 +102,15 @@ export function Toolbar() {
 
   return (
     <header
+      data-tauri-drag-region="deep"
       className="flex items-center gap-2 px-3 h-11 shrink-0"
       style={{
         background: "var(--bg-nav)",
         borderBottom: "1px solid var(--border)",
       }}
     >
-      {/* Brand (drag region) */}
-      <span
-        data-tauri-drag-region
-        onDoubleClick={toggleMaximize}
-        className="flex items-center gap-2 mr-2 select-none cursor-grab"
-      >
+      {/* Brand (drag region via header "deep") */}
+      <span className="flex items-center gap-2 mr-2 select-none cursor-grab">
         <img
           src="/git-started.svg"
           alt="git-started logo"
@@ -165,11 +162,7 @@ export function Toolbar() {
         </span>
       )}
 
-      <div
-        data-tauri-drag-region
-        onDoubleClick={toggleMaximize}
-        className="flex-1 self-stretch cursor-grab"
-      />
+      <div className="flex-1 self-stretch cursor-grab" />
 
       {/* Actions */}
       <button
@@ -223,6 +216,24 @@ export function Toolbar() {
         title="Open another repository"
       >
         <FolderOpen size={14} />
+      </button>
+
+      <button
+        className={btnClass}
+        style={{ background: "var(--bg-card)", color: "var(--text-primary)" }}
+        onClick={() => openDialog("summary")}
+        title="Repository summary"
+      >
+        <BarChart3 size={14} />
+      </button>
+
+      <button
+        className={btnClass}
+        style={{ background: "var(--bg-card)", color: "var(--text-primary)" }}
+        onClick={() => openDialog("reflog")}
+        title="Reflog (recover commits)"
+      >
+        <History size={14} />
       </button>
 
       <button

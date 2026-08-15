@@ -216,7 +216,7 @@ export function FilePanel() {
   }
 
   return (
-    <div className="overflow-y-auto" style={{ borderBottom: "1px solid var(--border)" }}>
+    <div className="flex-1 min-h-0 overflow-y-auto" style={{ borderBottom: "1px solid var(--border)" }}>
       <Section
         title="Staged"
         files={staged}

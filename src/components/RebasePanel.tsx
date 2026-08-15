@@ -10,7 +10,7 @@ import { useRepoStore } from "../stores/repo-store";
 import type { RebaseCommit } from "../lib/types";
 import { GitBranch, Play, X, AlertTriangle } from "lucide-react";
 
-const OPS = ["pick", "squash", "fixup", "reword", "edit", "drop"] as const;
+const OPS = ["pick", "squash", "fixup", "edit", "drop"] as const;
 
 interface Props {
   branch: string;
@@ -27,6 +27,7 @@ export function RebasePanel({ branch, base, onClose }: Props) {
   const abortMut = useRebaseAbort();
 
   const [operations, setOperations] = useState<RebaseCommit[]>([]);
+  const [backup, setBackup] = useState(false);
 
   // Initialize operations from fetched commits.
   if (commitsQ.data && operations.length === 0 && !statusQ.data?.in_progress) {
@@ -56,7 +57,7 @@ export function RebasePanel({ branch, base, onClose }: Props) {
   function handleStart() {
     if (!repoPath || operations.length === 0) return;
     startMut.mutate(
-      { onto: base, operations },
+      { branch, onto: base, operations, backup },
       { onSuccess: () => onClose() }
     );
   }
@@ -189,26 +190,13 @@ export function RebasePanel({ branch, base, onClose }: Props) {
               {op.short_oid}
             </span>
 
-            {/* Message (editable for reword/squash) */}
-            {(op.operation === "reword" || op.operation === "squash") ? (
-              <input
-                value={op.new_message ?? op.message}
-                onChange={(e) => updateOp(i, "new_message", e.target.value)}
-                className="flex-1 text-xs px-2 py-0.5 rounded outline-none"
-                style={{
-                  background: "var(--bg-secondary)",
-                  color: "var(--text-primary)",
-                  border: "1px solid var(--border-strong)",
-                }}
-              />
-            ) : (
-              <span
-                className="flex-1 text-xs truncate"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                {op.message}
-              </span>
-            )}
+            {/* Message */}
+            <span
+              className="flex-1 text-xs truncate"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              {op.message}
+            </span>
 
             {/* Author */}
             <span className="text-[10px] shrink-0" style={{ color: "var(--text-muted)" }}>
@@ -223,9 +211,15 @@ export function RebasePanel({ branch, base, onClose }: Props) {
         className="flex items-center justify-between px-3 py-2"
         style={{ borderTop: "1px solid var(--border)" }}
       >
-        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-          {operations.length} commit{operations.length !== 1 ? "s" : ""}
-        </span>
+        <label className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
+          <input
+            type="checkbox"
+            checked={backup}
+            onChange={(e) => setBackup(e.target.checked)}
+            style={{ accentColor: "var(--accent)" }}
+          />
+          Backup current state with tag
+        </label>
         <div className="flex gap-2">
           <button
             onClick={onClose}
