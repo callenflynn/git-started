@@ -65,6 +65,8 @@ export interface GraphLayout {
   /** rows[r][lane] = color index occupying the gap below row r, or -1. */
   rows: Array<Array<number>>;
   laneCount: number;
+  /** "row:lane" cells where a horizontal elbow passes over a lane. */
+  crossings: Set<string>;
 }
 
 export function yForRow(row: number, g: GraphGeometry): number {
@@ -143,9 +145,11 @@ export function buildGraphLayout(
   });
 
   // Cross-lane edges only; same-lane links are the pass-through verticals.
+  const crossings = new Set<string>();
   for (const commit of commits) {
     const node = nodes.get(commit.oid);
     if (!node) continue;
+    const isMerge = commit.parent_oids.length >= 2;
     for (const parentOid of commit.parent_oids) {
       const parentNode = nodes.get(parentOid);
       if (parentNode && parentNode.lane !== node.lane) {
@@ -156,11 +160,20 @@ export function buildGraphLayout(
           toLane: parentNode.lane,
           fromRow: node.row,
           toRow: parentNode.row,
-          colorIndex: node.colorIndex,
+          // A merge's elbow belongs to the merged-in branch (the parent); a
+          // fork's elbow belongs to the branching child.
+          colorIndex: isMerge ? parentNode.colorIndex : node.colorIndex,
         });
+        // Record the intermediate lanes the horizontal segment crosses so the
+        // renderer can hop those lanes' vertical lines over the crossing.
+        const lo = Math.min(node.lane, parentNode.lane);
+        const hi = Math.max(node.lane, parentNode.lane);
+        for (let l = lo + 1; l < hi; l++) {
+          crossings.add(`${node.row}:${l}`);
+        }
       }
     }
   }
 
-  return { nodes, edges, rows, laneCount: lanes.length };
+  return { nodes, edges, rows, laneCount: lanes.length, crossings };
 }

@@ -19,7 +19,10 @@ import { relativeTime, truncate } from "../lib/format";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { Search, X, GitCommit, GitMerge, Copy, RotateCcw } from "lucide-react";
 
-const GEOM: GraphGeometry = { rowH: 30, laneW: 20, padLeft: 12, nodeR: 5 };
+const GEOM: GraphGeometry = { rowH: 30, laneW: 28, padLeft: 12, nodeR: 5 };
+
+// Vertical gap left around a horizontal crossing so a lane line hops over it.
+const HOP = 6;
 
 // Text column layout (offsets from the right edge of the lane area).
 const COL_MSG = 0;
@@ -173,6 +176,8 @@ function CommitSvg({
   const svgH = commits.length * GEOM.rowH + 8;
 
   // Pass-through vertical lane lines (one per active lane per gap).
+  // When a horizontal elbow crosses a lane, that lane's line hops over the
+  // crossing so the two never visually collide.
   const laneLines: ReactNode[] = [];
   for (let r = 0; r < commits.length; r++) {
     const rowColors = layout.rows[r] ?? [];
@@ -180,8 +185,11 @@ function CommitSvg({
       const ci = rowColors[lane];
       if (ci === undefined || ci < 0) continue;
       const x = xForLane(lane, GEOM);
-      const y1 = yForRow(r, GEOM);
-      const y2 = r < commits.length - 1 ? yForRow(r + 1, GEOM) : svgH;
+      let y1 = yForRow(r, GEOM);
+      let y2 = r < commits.length - 1 ? yForRow(r + 1, GEOM) : svgH;
+      if (layout.crossings.has(`${r}:${lane}`)) y1 += HOP;
+      if (layout.crossings.has(`${r + 1}:${lane}`)) y2 -= HOP;
+      if (y2 <= y1) continue;
       laneLines.push(
         <line
           key={`${r}-${lane}`}
