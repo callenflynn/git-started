@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   RepoInfo,
   CommitInfo,
+  CommitFileChange,
   FileStatus,
   BranchInfo,
   StashInfo,
@@ -67,6 +68,23 @@ export async function searchCommits(
   max?: number
 ): Promise<CommitInfo[]> {
   return invoke<CommitInfo[]>("search_commits", { repoPath, query, max });
+}
+
+// ---- Commit inspection & operations ----
+
+export async function getCommitDiff(
+  repoPath: string,
+  oid: string
+): Promise<CommitFileChange[]> {
+  return invoke<CommitFileChange[]>("get_commit_diff", { repoPath, oid });
+}
+
+export async function cherryPick(repoPath: string, oid: string): Promise<void> {
+  return invoke("cherry_pick", { repoPath, oid });
+}
+
+export async function revertCommit(repoPath: string, oid: string): Promise<void> {
+  return invoke("revert", { repoPath, oid });
 }
 
 // ---- Staging ----

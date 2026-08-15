@@ -6,6 +6,8 @@ Project-specific knowledge for agents working in this repo. Keep entries terse.
 
 - `npm run build` = `tsc && vite build` (typecheck + frontend bundle). Not in the README.
 - Fast backend check: `cargo check --manifest-path src-tauri/Cargo.toml` (~1 min, incremental).
+- **Production builds MUST go through `tauri build` (`npx tauri build`), never plain `cargo build --release`.** The CLI passes `--features tauri/custom-protocol`; without it `tauri::is_dev()` is true and the "release" exe loads `devUrl` (localhost) instead of embedding `dist/` — symptom: "localhost refused to connect" at launch.
+- `vite.config.ts` pins `host: "127.0.0.1"` because Node otherwise bound only IPv6 `::1`, which IPv4 clients (WebView2/preview) can't reach.
 
 ## Architecture
 

@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useRepoStore } from "../stores/repo-store";
 import {
   useBranches,
@@ -21,7 +23,18 @@ import {
   AlertTriangle,
   Play,
   X,
+  Minus,
+  Square,
+  Copy,
 } from "lucide-react";
+
+function getWin() {
+  try {
+    return getCurrentWindow();
+  } catch {
+    return null;
+  }
+}
 
 export function Toolbar() {
   const setRepoPath = useRepoStore((s) => s.setRepoPath);
@@ -35,6 +48,29 @@ export function Toolbar() {
   const rebaseAbortMut = useRebaseAbort();
 
   const currentBranch = branches.data?.find((b) => b.is_head);
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const w = getWin();
+    if (!w) return;
+    w.isMaximized()
+      .then((m) => mounted && setIsMaximized(m))
+      .catch(() => {});
+    const un = w.onResized(() => {
+      w.isMaximized()
+        .then((m) => mounted && setIsMaximized(m))
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      un.then((f) => f()).catch(() => {});
+    };
+  }, []);
+
+  function toggleMaximize() {
+    getWin()?.toggleMaximize();
+  }
 
   async function handleOpen() {
     const selected = await open({ directory: true, multiple: false });
@@ -69,12 +105,24 @@ export function Toolbar() {
         borderBottom: "1px solid var(--border)",
       }}
     >
-      {/* Brand */}
+      {/* Brand (drag region) */}
       <span
-        className="text-xl font-bold mr-2 select-none"
-        style={{ fontFamily: "var(--font-brand)", color: "var(--accent)" }}
+        data-tauri-drag-region
+        onDoubleClick={toggleMaximize}
+        className="flex items-center gap-2 mr-2 select-none cursor-grab"
       >
-        git-started
+        <img
+          src="/git-started.svg"
+          alt="git-started logo"
+          className="w-[22px] h-[22px] rounded-md shrink-0"
+          draggable={false}
+        />
+        <span
+          className="text-xl font-bold"
+          style={{ fontFamily: "var(--font-brand)", color: "var(--accent)" }}
+        >
+          git-started
+        </span>
       </span>
 
       {/* Branch indicator */}
@@ -114,7 +162,11 @@ export function Toolbar() {
         </span>
       )}
 
-      <div className="flex-1" />
+      <div
+        data-tauri-drag-region
+        onDoubleClick={toggleMaximize}
+        className="flex-1 self-stretch cursor-grab"
+      />
 
       {/* Actions */}
       <button
@@ -171,6 +223,31 @@ export function Toolbar() {
       </button>
 
       <ThemeToggle />
+
+      {/* Custom window controls (native bar is hidden) */}
+      <div className="flex items-stretch h-11 -mr-3 ml-1">
+        <button
+          className="titlebar-btn"
+          onClick={() => getWin()?.minimize()}
+          title="Minimize"
+        >
+          <Minus size={14} />
+        </button>
+        <button
+          className="titlebar-btn"
+          onClick={() => getWin()?.toggleMaximize()}
+          title={isMaximized ? "Restore" : "Maximize"}
+        >
+          {isMaximized ? <Copy size={12} /> : <Square size={12} />}
+        </button>
+        <button
+          className="titlebar-btn titlebar-close"
+          onClick={() => getWin()?.close()}
+          title="Close"
+        >
+          <X size={15} />
+        </button>
+      </div>
     </header>
   );
 }

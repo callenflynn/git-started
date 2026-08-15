@@ -7,11 +7,14 @@ interface RepoStore {
   selectedFile: string | null;
   /** Whether the selected file is staged. */
   selectedStaged: boolean;
+  /** OID of the commit selected in the graph. */
+  selectedCommit: string | null;
   /** Auto-fetch interval in milliseconds (0 = disabled). */
   autoFetchMs: number;
 
   setRepoPath: (path: string | null) => void;
   selectFile: (path: string | null, staged: boolean) => void;
+  selectCommit: (oid: string | null) => void;
   setAutoFetchMs: (ms: number) => void;
 }
 
@@ -23,6 +26,7 @@ export const useRepoStore = create<RepoStore>((set) => ({
   repoPath: savedPath,
   selectedFile: null,
   selectedStaged: false,
+  selectedCommit: null,
   autoFetchMs: savedFetch ? parseInt(savedFetch, 10) : 30_000,
 
   setRepoPath: (path) => {
@@ -31,9 +35,10 @@ export const useRepoStore = create<RepoStore>((set) => ({
     } else {
       localStorage.removeItem("git-started:repoPath");
     }
-    set({ repoPath: path, selectedFile: null });
+    set({ repoPath: path, selectedFile: null, selectedCommit: null });
   },
   selectFile: (path, staged) => set({ selectedFile: path, selectedStaged: staged }),
+  selectCommit: (oid) => set({ selectedCommit: oid }),
   setAutoFetchMs: (ms) => {
     localStorage.setItem("git-started:autoFetchMs", String(ms));
     set({ autoFetchMs: ms });

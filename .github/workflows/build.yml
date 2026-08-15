@@ -90,6 +90,11 @@ jobs:
             fi
           fi
 
+      - name: Package .app bundle
+        run: |
+          APP=$(ls -d src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -1)
+          (cd "$(dirname "$APP")" && zip -qry "$(basename "$APP").zip" "$(basename "$APP")")
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -97,6 +102,7 @@ jobs:
           path: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/signature.txt
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.zip
           retention-days: 30
 
   build-linux:
@@ -113,7 +119,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev \
             build-essential curl wget file \
             libxdo-dev libssl-dev libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev rpm
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -165,6 +171,7 @@ jobs:
           name: linux-build
           path: |
             src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/appimage/signature.txt
           retention-days: 30
@@ -307,10 +314,12 @@ jobs:
             ### macOS
 
             - **`*.dmg`** — Disk image. Drag to Applications. Right-click → Open on first launch.
+            - **`*.app.zip`** — Raw app bundle (zip). Unzip, then drag to Applications.
 
             ### Linux
 
             - **`*.deb`** — For Debian / Ubuntu / Mint / Pop!_OS.
+            - **`*.rpm`** — For Fedora / RHEL / openSUSE.
             - **`*.AppImage`** — Portable, any distro. `chmod +x && ./<file>`.
 
             > Auto-updater is active for NSIS (Windows), DMG (macOS), and AppImage (Linux).
@@ -319,7 +328,9 @@ jobs:
           make_latest: true
           files: |
             artifacts/**/*.dmg
+            artifacts/**/*.zip
             artifacts/**/*.deb
+            artifacts/**/*.rpm
             artifacts/**/*.AppImage
             artifacts/**/*.msi
             artifacts/**/*.exe

@@ -1,4 +1,4 @@
-export type ThemeName = "dark" | "amoled" | "light";
+export type ThemeName = "dark" | "amoled" | "light" | "github-green" | "copilot";
 
 export interface RepoInfo {
   path: string;
@@ -23,6 +23,12 @@ export interface FileStatus {
   status: "added" | "modified" | "deleted" | "renamed" | "untracked";
   staged: boolean;
   old_path?: string;
+}
+
+export interface CommitFileChange {
+  path: string;
+  status: "added" | "modified" | "deleted" | "renamed";
+  old_path: string | null;
 }
 
 export interface BranchInfo {

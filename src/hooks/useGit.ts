@@ -24,6 +24,41 @@ export function useLog() {
   });
 }
 
+export function useCommitDiff(oid: string | null) {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useQuery({
+    queryKey: ["commit-diff", repoPath, oid],
+    queryFn: () => git.getCommitDiff(repoPath!, oid!),
+    enabled: !!repoPath && !!oid,
+  });
+}
+
+export function useCherryPick() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: (oid: string) => git.cherryPick(repoPath!, oid),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["status", repoPath] });
+      qc.invalidateQueries({ queryKey: ["log", repoPath] });
+      qc.invalidateQueries({ queryKey: ["branches", repoPath] });
+    },
+  });
+}
+
+export function useRevert() {
+  const qc = useQueryClient();
+  const repoPath = useRepoStore((s) => s.repoPath);
+  return useMutation({
+    mutationFn: (oid: string) => git.revertCommit(repoPath!, oid),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["status", repoPath] });
+      qc.invalidateQueries({ queryKey: ["log", repoPath] });
+      qc.invalidateQueries({ queryKey: ["branches", repoPath] });
+    },
+  });
+}
+
 export function useBranches() {
   const repoPath = useRepoStore((s) => s.repoPath);
   const autoFetchMs = useRepoStore((s) => s.autoFetchMs);

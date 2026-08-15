@@ -8,6 +8,7 @@ import {
   useUnstageAll,
 } from "../hooks/useGit";
 import type { FileStatus } from "../lib/types";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import {
   Plus,
   Minus,
@@ -18,6 +19,7 @@ import {
   CircleHelp,
   CheckCheck,
   Undo2,
+  Copy,
 } from "lucide-react";
 
 function statusIcon(status: FileStatus["status"]) {
@@ -42,6 +44,7 @@ function FileItem({ file }: { file: FileStatus }) {
   const selectFile = useRepoStore((s) => s.selectFile);
   const stageMut = useStageFile();
   const unstageMut = useUnstageFile();
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   const isSelected = selectedFile === file.path && selectedStaged === file.staged;
 
@@ -52,6 +55,20 @@ function FileItem({ file }: { file: FileStatus }) {
     e.dataTransfer.effectAllowed = "move";
   }
 
+  const menuItems: MenuItem[] = [
+    {
+      label: file.staged ? "Unstage" : "Stage",
+      icon: file.staged ? <Minus size={14} /> : <Plus size={14} />,
+      onClick: () =>
+        file.staged ? unstageMut.mutate(file.path) : stageMut.mutate(file.path),
+    },
+    {
+      label: "Copy path",
+      icon: <Copy size={14} />,
+      onClick: () => navigator.clipboard.writeText(file.path),
+    },
+  ];
+
   return (
     <div
       className="flex items-center gap-2 px-3 py-1 cursor-pointer group transition-colors"
@@ -61,6 +78,10 @@ function FileItem({ file }: { file: FileStatus }) {
       draggable={!file.staged}
       onDragStart={onDragStart}
       onClick={() => selectFile(file.path, file.staged)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
     >
       {statusIcon(file.status)}
       <span className="text-sm truncate flex-1"
@@ -88,6 +109,15 @@ function FileItem({ file }: { file: FileStatus }) {
         >
           <Minus size={14} style={{ color: "#EF4444" }} />
         </button>
+      )}
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItems}
+          onClose={() => setMenu(null)}
+        />
       )}
     </div>
   );

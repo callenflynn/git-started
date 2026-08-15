@@ -11,6 +11,8 @@ import {
   useCredentialInfo,
 } from "../hooks/useGit";
 import { useState } from "react";
+import { useLayoutStore } from "../stores/layout-store";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import {
   GitBranch,
   Globe,
@@ -39,18 +41,20 @@ function SectionHeader({ title, children }: { title: string; children?: React.Re
   );
 }
 
-function BranchItem({ name, isHead, onCheckout, onDelete, onRebase }: {
+function BranchItem({ name, isHead, onCheckout, onDelete, onRebase, onContextMenu }: {
   name: string;
   isHead: boolean;
   onCheckout: () => void;
   onDelete: () => void;
   onRebase?: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }) {
   return (
     <div
       className="flex items-center gap-2 px-3 py-1.5 cursor-pointer group transition-colors"
       style={{ background: isHead ? "var(--bg-hover)" : "transparent" }}
       onClick={onCheckout}
+      onContextMenu={onContextMenu}
     >
       <GitBranch size={13} style={{ color: isHead ? "var(--accent)" : "var(--text-muted)", flexShrink: 0 }} />
       <span className="text-sm truncate flex-1"
@@ -92,6 +96,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onRebase }: SidebarProps) {
+  const sidebarWidth = useLayoutStore((s) => s.sidebarWidth);
   const branches = useBranches();
   const stashes = useStashes();
   const tags = useTags();
@@ -105,6 +110,12 @@ export function Sidebar({ onRebase }: SidebarProps) {
 
   const [newBranch, setNewBranch] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    name: string;
+    isHead: boolean;
+  } | null>(null);
 
   const localBranches = branches.data?.filter((b) => !b.is_remote) ?? [];
   const remoteBranches = branches.data?.filter((b) => b.is_remote) ?? [];
@@ -121,13 +132,44 @@ export function Sidebar({ onRebase }: SidebarProps) {
     setShowNewBranch(false);
   }
 
+  function openBranchMenu(e: React.MouseEvent, name: string, isHead: boolean) {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, name, isHead });
+  }
+
+  const menuItems: MenuItem[] = menu
+    ? [
+        {
+          label: "Checkout",
+          icon: <GitBranch size={14} />,
+          onClick: () => checkoutMut.mutate(menu.name),
+        },
+        ...(menu.isHead
+          ? []
+          : [
+              {
+                label: "Rebase onto current",
+                icon: <GitMerge size={14} />,
+                onClick: () => onRebase(menu.name, currentBranch?.name ?? "main"),
+              },
+              {
+                label: "Delete",
+                icon: <Trash2 size={14} />,
+                danger: true,
+                onClick: () => deleteBranchMut.mutate(menu.name),
+              },
+            ]),
+      ]
+    : [];
+
   const sidebarStyle = {
     background: "var(--bg-secondary)",
     borderRight: "1px solid var(--border)",
+    width: sidebarWidth,
   };
 
   return (
-    <aside className="w-60 flex flex-col overflow-y-auto shrink-0" style={sidebarStyle}>
+    <aside className="flex flex-col overflow-y-auto shrink-0" style={sidebarStyle}>
       {/* Local branches */}
       <SectionHeader title="Branches">
         <button
@@ -170,6 +212,7 @@ export function Sidebar({ onRebase }: SidebarProps) {
                 ? () => onRebase(b.name, currentBranch?.name ?? "main")
                 : undefined
             }
+            onContextMenu={(e) => openBranchMenu(e, b.name, b.is_head)}
           />
         ))}
       </div>
@@ -188,6 +231,7 @@ export function Sidebar({ onRebase }: SidebarProps) {
                 isHead={b.is_head}
                 onCheckout={() => handleCheckout(b.name)}
                 onDelete={() => deleteBranchMut.mutate(b.name)}
+                onContextMenu={(e) => openBranchMenu(e, b.name, b.is_head)}
               />
             ))}
           </div>
@@ -289,6 +333,15 @@ export function Sidebar({ onRebase }: SidebarProps) {
             )}
           </div>
         </>
+      )}
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItems}
+          onClose={() => setMenu(null)}
+        />
       )}
     </aside>
   );

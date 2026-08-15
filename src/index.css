@@ -19,6 +19,9 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --graph-branch5: #14B8A6;
+  --graph-branch6: #EC4899;
+  --graph-branch7: #8B5CF6;
 }
 
 /* ======================== DARK THEME (default) ======================== */
@@ -96,6 +99,68 @@
   --graph-branch4: #D97706;
 }
 
+/* ======================== GITHUB GREEN THEME ======================== */
+[data-theme="github-green"] {
+  --accent: #0FBF3E;
+  --accent-hover: #08872B;
+  --accent-glow: rgba(15, 191, 62, 0.25);
+  --bg-primary: #101411;
+  --bg-secondary: #232925;
+  --bg-card: #232925;
+  --bg-hover: #2E3831;
+  --bg-glass: rgba(16, 20, 17, 0.8);
+  --bg-nav: rgba(16, 20, 17, 0.92);
+  --text-primary: #F2F5F3;
+  --text-secondary: #E4EBE6;
+  --text-muted: #909692;
+  --text-inverse: #101411;
+  --border: rgba(242, 245, 243, 0.08);
+  --border-strong: rgba(242, 245, 243, 0.16);
+  --diff-add-bg: rgba(15, 191, 62, 0.12);
+  --diff-add-line: rgba(15, 191, 62, 0.28);
+  --diff-del-bg: rgba(248, 81, 73, 0.12);
+  --diff-del-line: rgba(248, 81, 73, 0.28);
+  --graph-main: #0FBF3E;
+  --graph-branch1: #4A9EFF;
+  --graph-branch2: #A371F7;
+  --graph-branch3: #F0883E;
+  --graph-branch4: #909692;
+  --graph-branch5: #5FED83;
+  --graph-branch6: #8CF2A6;
+  --graph-branch7: #B6BFB8;
+}
+
+/* ======================== COPILOT THEME ======================== */
+[data-theme="copilot"] {
+  --accent: #8534F3;
+  --accent-hover: #43179E;
+  --accent-glow: rgba(133, 52, 243, 0.28);
+  --bg-primary: #160048;
+  --bg-secondary: #26115F;
+  --bg-card: #26115F;
+  --bg-hover: #43179E;
+  --bg-glass: rgba(22, 0, 72, 0.8);
+  --bg-nav: rgba(22, 0, 72, 0.94);
+  --text-primary: #C898FD;
+  --text-secondary: #B870FF;
+  --text-muted: #8B6FD0;
+  --text-inverse: #FFFFFF;
+  --border: rgba(200, 152, 253, 0.1);
+  --border-strong: rgba(200, 152, 253, 0.2);
+  --diff-add-bg: rgba(63, 185, 80, 0.12);
+  --diff-add-line: rgba(63, 185, 80, 0.28);
+  --diff-del-bg: rgba(254, 76, 37, 0.14);
+  --diff-del-line: rgba(254, 76, 37, 0.3);
+  --graph-main: #8534F3;
+  --graph-branch1: #F08A3A;
+  --graph-branch2: #B870FF;
+  --graph-branch3: #FE4C25;
+  --graph-branch4: #43179E;
+  --graph-branch5: #C898FD;
+  --graph-branch6: #C53211;
+  --graph-branch7: #F4A876;
+}
+
 /* ======================== GLOBAL STYLES ======================== */
 * {
   margin: 0;
@@ -133,4 +198,73 @@ pre,
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+/* ======================== RESIZABLE PANELS ======================== */
+.resize-handle {
+  position: relative;
+  z-index: 20;
+  flex-shrink: 0;
+}
+
+.resize-handle-v {
+  width: 5px;
+  cursor: col-resize;
+}
+
+.resize-handle-h {
+  height: 5px;
+  cursor: row-resize;
+}
+
+.resize-handle-v:hover,
+.resize-handle-v.dragging {
+  background: var(--accent);
+  opacity: 0.4;
+}
+
+.resize-handle-h:hover,
+.resize-handle-h.dragging {
+  background: var(--accent);
+  opacity: 0.4;
+}
+
+/* ======================== CUSTOM TITLE BAR ======================== */
+.titlebar-btn {
+  width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.titlebar-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.titlebar-close:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
+.theme-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+/* ======================== COMMIT GRAPH ======================== */
+.graph-row {
+  cursor: pointer;
+}
+
+.graph-row .row-bg {
+  fill: transparent;
+}
+
+.graph-row:hover .row-bg {
+  fill: var(--bg-hover);
 }

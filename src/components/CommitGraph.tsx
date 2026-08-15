@@ -1,104 +1,97 @@
-import { useState } from "react";
-import { useLog, useSearchCommits } from "../hooks/useGit";
+import { useState, type ReactNode } from "react";
+import {
+  useLog,
+  useSearchCommits,
+  useCheckout,
+  useCherryPick,
+  useRevert,
+} from "../hooks/useGit";
+import { useRepoStore } from "../stores/repo-store";
 import type { CommitInfo } from "../lib/types";
-import { Search, X } from "lucide-react";
+import {
+  buildGraphLayout,
+  colorForIndex,
+  xForLane,
+  yForRow,
+  type GraphGeometry,
+} from "../lib/graph";
+import { relativeTime, truncate } from "../lib/format";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { Search, X, GitCommit, GitMerge, Copy, RotateCcw } from "lucide-react";
 
-const NODE_R = 5;
-const ROW_H = 28;
-const LANE_W = 20;
-const PAD_LEFT = 12;
+const GEOM: GraphGeometry = { rowH: 30, laneW: 20, padLeft: 12, nodeR: 5 };
 
-// Colors for parallel branch lanes.
-const LANE_COLORS = [
-  "var(--graph-main)",
-  "var(--graph-branch1)",
-  "var(--graph-branch2)",
-  "var(--graph-branch3)",
-  "var(--graph-branch4)",
-];
-
-interface NodePosition {
-  x: number;
-  y: number;
-  lane: number;
-}
-
-/**
- * Build lane positions for each commit.
- * Walk the list top to bottom. Each commit gets assigned to a lane.
- * Merge commits connect back to their parent lanes.
- */
-function buildGraph(commits: CommitInfo[]): Map<string, NodePosition> {
-  const pos = new Map<string, NodePosition>();
-  const activeLanes: string[] = [];
-
-  commits.forEach((commit, row) => {
-    // Find or assign a lane for this commit.
-    let lane = activeLanes.indexOf(commit.oid);
-    if (lane === -1) {
-      lane = activeLanes.indexOf(null as unknown as string);
-      if (lane === -1) {
-        lane = activeLanes.length;
-        activeLanes.push(commit.oid);
-      } else {
-        activeLanes[lane] = commit.oid;
-      }
-    }
-
-    const x = PAD_LEFT + lane * LANE_W + NODE_R;
-    const y = row * ROW_H + ROW_H / 2;
-    pos.set(commit.oid, { x, y, lane });
-
-    // Free lanes from parents that have been fully processed.
-    for (const parentOid of commit.parent_oids) {
-      if (!commits.find((c) => c.oid === parentOid)) {
-        // Parent is outside our visible range.
-        const parentLane = activeLanes.indexOf(parentOid);
-        if (parentLane !== -1) {
-          activeLanes[parentLane] = null as unknown as string;
-        }
-      }
-    }
-
-    // If this commit has only one parent and it is not yet placed,
-    // keep the lane occupied for the parent.
-    if (commit.parent_oids.length === 1) {
-      const parentOid = commit.parent_oids[0];
-      if (!pos.has(parentOid)) {
-        activeLanes[lane] = parentOid;
-      } else {
-        activeLanes[lane] = null as unknown as string;
-      }
-    } else {
-      // Merge or root commit. Free this lane.
-      activeLanes[lane] = null as unknown as string;
-    }
-  });
-
-  return pos;
-}
+// Text column layout (offsets from the right edge of the lane area).
+const COL_MSG = 0;
+const COL_OID = 320;
+const COL_AUTHOR = 388;
+const COL_DATE = 500;
 
 export function CommitGraph() {
   const [searchQuery, setSearchQuery] = useState("");
+  const selectedCommit = useRepoStore((s) => s.selectedCommit);
+  const selectCommit = useRepoStore((s) => s.selectCommit);
   const log = useLog();
   const searchResult = useSearchCommits(searchQuery);
   const allCommits = log.data ?? [];
 
-  const commits = searchQuery.trim()
-    ? (searchResult.data ?? [])
-    : allCommits;
+  const commits = searchQuery.trim() ? (searchResult.data ?? []) : allCommits;
+
+  const checkoutMut = useCheckout();
+  const cherryPickMut = useCherryPick();
+  const revertMut = useRevert();
+  const [menu, setMenu] = useState<{ x: number; y: number; oid: string } | null>(null);
+
+  function handleCommitContext(e: React.MouseEvent, oid: string) {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, oid });
+  }
+
+  const menuItems: MenuItem[] = menu
+    ? [
+        {
+          label: "Checkout commit",
+          icon: <GitCommit size={14} />,
+          onClick: () =>
+            checkoutMut.mutate(menu.oid, { onError: (e) => window.alert(e.message) }),
+        },
+        {
+          label: "Cherry-pick",
+          icon: <GitMerge size={14} />,
+          onClick: () =>
+            cherryPickMut.mutate(menu.oid, { onError: (e) => window.alert(e.message) }),
+        },
+        {
+          label: "Revert",
+          icon: <RotateCcw size={14} />,
+          danger: true,
+          onClick: () =>
+            revertMut.mutate(menu.oid, { onError: (e) => window.alert(e.message) }),
+        },
+        {
+          label: "Copy SHA",
+          icon: <Copy size={14} />,
+          onClick: () => navigator.clipboard.writeText(menu.oid),
+        },
+      ]
+    : [];
 
   if (log.isLoading) {
     return (
-      <div className="flex items-center justify-center h-48 text-sm"
-           style={{ color: "var(--text-muted)" }}>
+      <div
+        className="flex items-center justify-center h-48 text-sm"
+        style={{ color: "var(--text-muted)" }}
+      >
         Loading commits...
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col overflow-hidden flex-1" style={{ background: "var(--bg-card)" }}>
+    <div
+      className="flex flex-col overflow-hidden flex-1"
+      style={{ background: "var(--bg-card)" }}
+    >
       {/* Search bar */}
       <div
         className="flex items-center gap-2 px-3 py-1.5 shrink-0"
@@ -132,144 +125,220 @@ export function CommitGraph() {
         )}
       </div>
 
-      {/* Commit graph */}
       {commits.length === 0 ? (
-        <div className="flex items-center justify-center h-48 text-sm"
-             style={{ color: "var(--text-muted)" }}>
+        <div
+          className="flex items-center justify-center h-48 text-sm"
+          style={{ color: "var(--text-muted)" }}
+        >
           {searchQuery.trim() ? "No matching commits." : "No commits yet."}
         </div>
       ) : (
         <div className="overflow-y-auto flex-1">
-          <CommitSvg commits={commits} />
+          <CommitSvg
+            commits={commits}
+            selectedCommit={selectedCommit}
+            onSelect={selectCommit}
+            onContext={handleCommitContext}
+          />
         </div>
+      )}
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItems}
+          onClose={() => setMenu(null)}
+        />
       )}
     </div>
   );
 }
 
-function CommitSvg({ commits }: { commits: CommitInfo[] }) {
-  const positions = buildGraph(commits);
-  const maxLanes = Math.max(...[...positions.values()].map((p) => p.lane + 1), 1);
-  const svgW = PAD_LEFT + maxLanes * LANE_W + NODE_R * 2 + 280;
-  const svgH = commits.length * ROW_H + 8;
+function CommitSvg({
+  commits,
+  selectedCommit,
+  onSelect,
+  onContext,
+}: {
+  commits: CommitInfo[];
+  selectedCommit: string | null;
+  onSelect: (oid: string) => void;
+  onContext: (e: React.MouseEvent, oid: string) => void;
+}) {
+  const layout = buildGraphLayout(commits, GEOM);
+  const laneCount = layout.laneCount;
+  const textX = GEOM.padLeft + laneCount * GEOM.laneW + GEOM.nodeR * 2;
+  const svgW = textX + 560;
+  const svgH = commits.length * GEOM.rowH + 8;
+
+  // Pass-through vertical lane lines (one per active lane per gap).
+  const laneLines: ReactNode[] = [];
+  for (let r = 0; r < commits.length; r++) {
+    const rowColors = layout.rows[r] ?? [];
+    for (let lane = 0; lane < laneCount; lane++) {
+      const ci = rowColors[lane];
+      if (ci === undefined || ci < 0) continue;
+      const x = xForLane(lane, GEOM);
+      const y1 = yForRow(r, GEOM);
+      const y2 = r < commits.length - 1 ? yForRow(r + 1, GEOM) : svgH;
+      laneLines.push(
+        <line
+          key={`${r}-${lane}`}
+          x1={x}
+          y1={y1}
+          x2={x}
+          y2={y2}
+          stroke={colorForIndex(ci)}
+          strokeWidth={2}
+        />
+      );
+    }
+  }
+
+  // Merge elbows: horizontal at the child's row, then down to the parent's lane.
+  const elbows = layout.edges.map((e) => {
+    const x1 = xForLane(e.fromLane, GEOM);
+    const x2 = xForLane(e.toLane, GEOM);
+    const y1 = yForRow(e.fromRow, GEOM);
+    const y2 = yForRow(e.toRow, GEOM);
+    return (
+      <path
+        key={`${e.childOid}-${e.parentOid}`}
+        d={`M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`}
+        stroke={colorForIndex(e.colorIndex)}
+        strokeWidth={2}
+        fill="none"
+      />
+    );
+  });
 
   return (
     <svg width={svgW} height={svgH} className="block">
-      {commits.map((commit) => {
-        const p = positions.get(commit.oid);
-        if (!p) return null;
+      {laneLines}
+      {elbows}
 
-        // Draw edges to parents.
-        const edges = commit.parent_oids.map((parentOid) => {
-          const pp = positions.get(parentOid);
-          if (!pp) {
-            // Parent is off-screen; draw line downward.
-            return (
-              <line
-                key={parentOid}
-                x1={p.x}
-                y1={p.y}
-                x2={p.x}
-                y2={svgH}
-                stroke={LANE_COLORS[p.lane % LANE_COLORS.length]}
-                strokeWidth={2}
-                opacity={0.5}
-              />
-            );
-          }
-          if (pp.x === p.x) {
-            // Same lane — straight line.
-            return (
-              <line
-                key={parentOid}
-                x1={p.x}
-                y1={p.y}
-                x2={pp.x}
-                y2={pp.y}
-                stroke={LANE_COLORS[p.lane % LANE_COLORS.length]}
-                strokeWidth={2}
-              />
-            );
-          }
-          // Different lane — bend via a path.
-          const midY = (p.y + pp.y) / 2;
-          return (
-            <path
-              key={parentOid}
-              d={`M ${p.x} ${p.y} L ${p.x} ${midY} L ${pp.x} ${midY} L ${pp.x} ${pp.y}`}
-              stroke={LANE_COLORS[p.lane % LANE_COLORS.length]}
-              strokeWidth={2}
-              fill="none"
-            />
-          );
-        });
+      {commits.map((commit) => {
+        const node = layout.nodes.get(commit.oid);
+        if (!node) return null;
+        const selected = commit.oid === selectedCommit;
+        const rowY = node.y;
 
         return (
-          <g key={commit.oid}>
-            {edges}
+          <g
+            key={commit.oid}
+            className="graph-row"
+            onClick={() => onSelect(commit.oid)}
+            onContextMenu={(e) => onContext(e, commit.oid)}
+          >
+            {/* Full-row hover/selection background */}
+            <rect
+              className="row-bg"
+              x={0}
+              y={rowY - GEOM.rowH / 2}
+              width={svgW}
+              height={GEOM.rowH}
+              fill={selected ? "var(--bg-hover)" : undefined}
+            />
+
+            {/* Selection halo */}
+            {selected && (
+              <circle
+                cx={node.x}
+                cy={rowY}
+                r={GEOM.nodeR + 4}
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth={1.5}
+              />
+            )}
+
+            {/* Node */}
             <circle
-              cx={p.x}
-              cy={p.y}
-              r={NODE_R}
-              fill={LANE_COLORS[p.lane % LANE_COLORS.length]}
+              cx={node.x}
+              cy={rowY}
+              r={GEOM.nodeR}
+              fill={node.color}
               stroke="var(--bg-card)"
               strokeWidth={2}
             />
+
+            {/* Branch/tag labels float next to the node */}
+            {commit.branch_names.map((bn, i) => {
+              const chipX = node.x + GEOM.nodeR + 5;
+              const chipY = rowY - 8 + i * 18;
+              const w = bn.length * 7 + 12;
+              return (
+                <g key={bn}>
+                  <rect
+                    x={chipX}
+                    y={chipY}
+                    width={w}
+                    height={16}
+                    rx={4}
+                    fill={node.color}
+                    opacity={0.92}
+                  />
+                  <text
+                    x={chipX + 6}
+                    y={chipY + 11.5}
+                    fill="var(--text-inverse)"
+                    fontSize={10}
+                    fontFamily="var(--font-mono)"
+                  >
+                    {bn}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Message */}
             <text
-              x={PAD_LEFT + maxLanes * LANE_W + NODE_R + 8}
-              y={p.y + 1}
+              x={textX + COL_MSG}
+              y={rowY + 1}
               dominantBaseline="middle"
-              fill="var(--text-primary)"
+              fill={selected ? "var(--text-primary)" : "var(--text-secondary)"}
               fontSize={12}
+              fontFamily="var(--font-body)"
+            >
+              {truncate(commit.message, 46)}
+            </text>
+
+            {/* Short OID */}
+            <text
+              x={textX + COL_OID}
+              y={rowY + 1}
+              dominantBaseline="middle"
+              fill="var(--text-muted)"
+              fontSize={11}
               fontFamily="var(--font-mono)"
             >
               {commit.short_oid}
             </text>
+
+            {/* Author */}
             <text
-              x={PAD_LEFT + maxLanes * LANE_W + NODE_R + 68}
-              y={p.y + 1}
-              dominantBaseline="middle"
-              fill="var(--text-secondary)"
-              fontSize={12}
-              fontFamily="var(--font-body)"
-            >
-              {commit.message.length > 60
-                ? commit.message.slice(0, 60) + "..."
-                : commit.message}
-            </text>
-            <text
-              x={PAD_LEFT + maxLanes * LANE_W + NODE_R + 68 + 420}
-              y={p.y + 1}
+              x={textX + COL_AUTHOR}
+              y={rowY + 1}
               dominantBaseline="middle"
               fill="var(--text-muted)"
               fontSize={11}
               fontFamily="var(--font-body)"
             >
-              {commit.author}
+              {truncate(commit.author, 16)}
             </text>
-            {commit.branch_names.map((bn) => (
-              <g key={bn}>
-                <rect
-                  x={PAD_LEFT + maxLanes * LANE_W + NODE_R + 68 + 520}
-                  y={p.y - 8}
-                  width={bn.length * 7 + 8}
-                  height={16}
-                  rx={4}
-                  fill="var(--accent)"
-                  opacity={0.9}
-                />
-                <text
-                  x={PAD_LEFT + maxLanes * LANE_W + NODE_R + 68 + 524}
-                  y={p.y + 1}
-                  dominantBaseline="middle"
-                  fill="var(--text-inverse)"
-                  fontSize={10}
-                  fontFamily="var(--font-mono)"
-                >
-                  {bn}
-                </text>
-              </g>
-            ))}
+
+            {/* Relative date */}
+            <text
+              x={textX + COL_DATE}
+              y={rowY + 1}
+              dominantBaseline="middle"
+              fill="var(--text-muted)"
+              fontSize={11}
+              fontFamily="var(--font-body)"
+            >
+              {relativeTime(commit.timestamp)}
+            </text>
           </g>
         );
       })}

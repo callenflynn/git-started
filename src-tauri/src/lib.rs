@@ -34,6 +34,13 @@ pub struct FileStatus {
 }
 
 #[derive(Serialize)]
+pub struct CommitFileChange {
+    path: String,
+    status: String,
+    old_path: Option<String>,
+}
+
+#[derive(Serialize)]
 pub struct BranchInfo {
     name: String,
     is_head: bool,
@@ -327,7 +334,9 @@ fn get_log(repo_path: String, max: Option<usize>) -> Result<Vec<CommitInfo>, Str
     }
 
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
-    revwalk.set_sorting(Sort::TIME).map_err(|e| e.to_string())?;
+    revwalk
+        .set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
+        .map_err(|e| e.to_string())?;
     revwalk.push(head.target().ok_or("HEAD has no target")?)
         .map_err(|e| e.to_string())?;
 
@@ -857,7 +866,9 @@ fn get_rebase_commits(
         .map_err(|e| format!("Base '{}' not found: {}", base, e))?;
 
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
-    revwalk.set_sorting(Sort::TIME).map_err(|e| e.to_string())?;
+    revwalk
+        .set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
+        .map_err(|e| e.to_string())?;
     revwalk
         .hide(base_oid)
         .map_err(|e| e.to_string())?;
@@ -1155,7 +1166,9 @@ fn search_commits(
     let head = repo.head().map_err(|e| e.to_string())?;
 
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
-    revwalk.set_sorting(Sort::TIME).map_err(|e| e.to_string())?;
+    revwalk
+        .set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
+        .map_err(|e| e.to_string())?;
     revwalk.push(head.target().ok_or("HEAD has no target")?)
         .map_err(|e| e.to_string())?;
 
@@ -1541,6 +1554,113 @@ fn get_git_config(key: String, repo_path: Option<String>) -> Result<Option<Strin
     }
 }
 
+// ────────────────────── Commit inspection & operations ──────────────────────
+
+/// List the files changed by a single commit, relative to its first parent.
+#[tauri::command]
+fn get_commit_diff(repo_path: String, oid: String) -> Result<Vec<CommitFileChange>, String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let oid = git2::Oid::from_str(&oid).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+    let tree = commit.tree().map_err(|e| e.to_string())?;
+
+    // A root commit has no parent; diff against an empty tree.
+    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+
+    let diff = repo
+        .diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)
+        .map_err(|e| e.to_string())?;
+
+    let mut result = Vec::new();
+    for delta in diff.deltas() {
+        let status_str = match delta.status() {
+            git2::Delta::Renamed | git2::Delta::Copied => "renamed",
+            git2::Delta::Added => "added",
+            git2::Delta::Deleted => "deleted",
+            _ => "modified",
+        };
+
+        let path = delta
+            .new_file()
+            .path()
+            .and_then(|p| p.to_str())
+            .unwrap_or("")
+            .to_string();
+        let old_path = delta
+            .old_file()
+            .path()
+            .and_then(|p| p.to_str())
+            .map(|s| s.to_string());
+
+        result.push(CommitFileChange {
+            path,
+            status: status_str.to_string(),
+            old_path,
+        });
+    }
+
+    Ok(result)
+}
+
+/// Cherry-pick a commit onto HEAD and commit it if the result is clean.
+#[tauri::command]
+fn cherry_pick(repo_path: String, oid: String) -> Result<(), String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let oid = git2::Oid::from_str(&oid).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+
+    repo.cherrypick(&commit, None).map_err(|e| e.to_string())?;
+
+    finish_apply(&repo, commit.message().unwrap_or(""))
+}
+
+/// Revert a commit and commit the reversal if the result is clean.
+#[tauri::command]
+fn revert(repo_path: String, oid: String) -> Result<(), String> {
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let oid = git2::Oid::from_str(&oid).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+
+    repo.revert(&commit, None).map_err(|e| e.to_string())?;
+
+    let subject = commit
+        .message()
+        .unwrap_or("")
+        .lines()
+        .next()
+        .unwrap_or("");
+    let message = format!(
+        "Revert \"{}\"\n\nThis reverts commit {}.\n",
+        subject, oid
+    );
+    finish_apply(&repo, &message)
+}
+
+/// Commit the result of a cherry-pick/revert, or leave conflicts for the user.
+fn finish_apply(repo: &Repository, message: &str) -> Result<(), String> {
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+
+    if index.has_conflicts() {
+        index.write().map_err(|e| e.to_string())?;
+        return Err(
+            "Operation resulted in conflicts. Resolve them, then commit.".to_string(),
+        );
+    }
+
+    let tree_oid = index.write_tree().map_err(|e| e.to_string())?;
+    let tree = repo.find_tree(tree_oid).map_err(|e| e.to_string())?;
+    let sig = repo.signature().map_err(|e| e.to_string())?;
+    let head_commit = repo
+        .head()
+        .and_then(|h| h.peel_to_commit())
+        .map_err(|e| e.to_string())?;
+
+    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head_commit])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 // ────────────────────── Entry point ──────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1555,6 +1675,9 @@ pub fn run() {
             get_status,
             get_diff,
             get_log,
+            get_commit_diff,
+            cherry_pick,
+            revert,
             do_commit,
             stage_file,
             unstage_file,
