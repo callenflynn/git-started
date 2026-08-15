@@ -322,12 +322,12 @@ fn get_log(repo_path: String, max: Option<usize>) -> Result<Vec<CommitInfo>, Str
     if let Ok(branches) = repo.branches(Some(git2::BranchType::Local)) {
         for (branch, _bt) in branches.flatten() {
             if let Ok(ref_name) = branch.get().name() {
-                if let Ok(oid) = branch.get().resolve().map(|r| r.target()) {
+                if let Ok(Some(oid)) = branch.get().resolve().map(|r| r.target()) {
                     let short = ref_name
                         .strip_prefix("refs/heads/")
                         .unwrap_or(ref_name)
                         .to_string();
-                    branch_map.insert(short, oid.unwrap());
+                    branch_map.insert(short, oid);
                 }
             }
         }
@@ -337,10 +337,22 @@ fn get_log(repo_path: String, max: Option<usize>) -> Result<Vec<CommitInfo>, Str
     revwalk
         .set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
         .map_err(|e| e.to_string())?;
-    revwalk.push(head.target().ok_or("HEAD has no target")?)
+
+    // Walk every local branch tip (not just HEAD) so parallel branches appear
+    // in the graph. This mirrors `git log --all`.
+    if let Ok(branches) = repo.branches(Some(git2::BranchType::Local)) {
+        for (branch, _bt) in branches.flatten() {
+            if let Some(target) = branch.get().target() {
+                revwalk.push(target).ok();
+            }
+        }
+    }
+    // Always include HEAD itself, even when detached.
+    revwalk
+        .push(head.target().ok_or("HEAD has no target")?)
         .map_err(|e| e.to_string())?;
 
-    let limit = max.unwrap_or(200);
+    let limit = max.unwrap_or(1000);
     let mut result = Vec::new();
 
     for (i, oid_result) in revwalk.enumerate() {
