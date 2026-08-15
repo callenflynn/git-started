@@ -45,7 +45,6 @@
     ]
   },
   "plugins": {
-    "dialog": {},
     "updater": {
       "active": true,
       "endpoints": [

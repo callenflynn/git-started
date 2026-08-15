@@ -24,3 +24,4 @@ Project-specific knowledge for agents working in this repo. Keep entries terse.
 - `resolve_conflict` reads the file at `Path::new(&file_path)` (app CWD) instead of joining `repo_path` — conflict resolution fails outside the app's working directory.
 - Inline `style` values like `#22C55E/20` and `var(--accent)/20` are invalid CSS (slash-alpha is Tailwind-class-only). The browser silently drops them.
 - Tauri plugins need all three: Cargo.toml dep, `.plugin(...::init())` in `run()`, and a capability in `capabilities/default.json`. `window-state` is declared and granted but never initialized.
+- Plugins with no config (e.g. `dialog`) must be omitted/null in `tauri.conf.json`'s `plugins` map — `"dialog": {}` crashes at startup (`invalid type: map, expected unit`). Compiles and bundles fine; only fails at runtime.
