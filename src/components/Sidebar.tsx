@@ -21,6 +21,7 @@ import {
   Plus,
   Trash2,
   ArrowDownToLine,
+  ArrowUpRight,
   GitMerge,
   Package,
   RefreshCw,
@@ -28,45 +29,76 @@ import {
   CheckCircle,
 } from "lucide-react";
 
-function SectionHeader({ title, children }: { title: string; children?: React.ReactNode }) {
+function SectionHeader({ title, count, children }: { title: string; count?: number; children?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between px-3 py-2"
          style={{ borderBottom: "1px solid var(--border)" }}>
-      <span className="text-xs font-semibold uppercase tracking-wider"
+      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider"
             style={{ color: "var(--text-muted)" }}>
         {title}
+        {count !== undefined && (
+          <span className="text-[10px] leading-none px-1.5 py-0.5 rounded-full"
+                style={{ background: "var(--bg-hover)", color: "var(--text-muted)" }}>
+            {count}
+          </span>
+        )}
       </span>
       {children}
     </div>
   );
 }
 
-function BranchItem({ name, isHead, onCheckout, onDelete, onRebase, onContextMenu }: {
+function BranchItem({ name, isHead, selected, upstream, onSelect, onCheckout, onDelete, onRebase, onContextMenu }: {
   name: string;
   isHead: boolean;
+  selected: boolean;
+  upstream: string | null;
+  onSelect: () => void;
   onCheckout: () => void;
   onDelete: () => void;
   onRebase?: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
+  const cls = `group relative flex items-center gap-2 mx-1.5 my-0.5 px-2 py-1.5 rounded-md cursor-pointer branch-item${
+    isHead ? " is-head" : selected ? " is-selected" : ""
+  }`;
+
   return (
     <div
-      className="flex items-center gap-2 px-3 py-1.5 cursor-pointer group transition-colors"
-      style={{ background: isHead ? "var(--bg-hover)" : "transparent" }}
-      onClick={onCheckout}
+      className={cls}
+      onClick={onSelect}
+      onDoubleClick={onCheckout}
       onContextMenu={onContextMenu}
+      title="Double-click to checkout"
     >
-      <GitBranch size={13} style={{ color: isHead ? "var(--accent)" : "var(--text-muted)", flexShrink: 0 }} />
-      <span className="text-sm truncate flex-1"
-            style={{ color: isHead ? "var(--accent)" : "var(--text-secondary)" }}>
+      <GitBranch
+        size={13}
+        className="shrink-0"
+        style={{ color: isHead ? "var(--accent)" : "var(--text-muted)" }}
+      />
+      <span
+        className="text-sm truncate flex-1"
+        style={{
+          color: isHead ? "var(--accent)" : "var(--text-primary)",
+          fontWeight: isHead ? 600 : 400,
+        }}
+      >
         {name}
       </span>
+
+      {upstream && (
+        <span className="shrink-0 opacity-40 flex items-center" title={`Tracks ${upstream}`}>
+          <ArrowUpRight size={11} style={{ color: "var(--text-muted)" }} />
+        </span>
+      )}
+
       {isHead && (
         <span className="text-[10px] px-1.5 py-0.5 rounded"
               style={{ background: "var(--accent)", color: "var(--text-inverse)" }}>
           HEAD
         </span>
       )}
+
       {!isHead && (
         <>
           {onRebase && (
@@ -110,6 +142,7 @@ export function Sidebar({ onRebase }: SidebarProps) {
 
   const [newBranch, setNewBranch] = useState("");
   const [showNewBranch, setShowNewBranch] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
@@ -171,7 +204,7 @@ export function Sidebar({ onRebase }: SidebarProps) {
   return (
     <aside className="flex flex-col overflow-y-auto shrink-0" style={sidebarStyle}>
       {/* Local branches */}
-      <SectionHeader title="Branches">
+      <SectionHeader title="Branches" count={localBranches.length}>
         <button
           className="p-1 rounded transition-colors hover:bg-white/10"
           onClick={() => setShowNewBranch(!showNewBranch)}
@@ -205,6 +238,9 @@ export function Sidebar({ onRebase }: SidebarProps) {
             key={b.name}
             name={b.name}
             isHead={b.is_head}
+            selected={selectedBranch === b.name}
+            upstream={b.upstream}
+            onSelect={() => setSelectedBranch(b.name)}
             onCheckout={() => handleCheckout(b.name)}
             onDelete={() => deleteBranchMut.mutate(b.name)}
             onRebase={
@@ -220,7 +256,7 @@ export function Sidebar({ onRebase }: SidebarProps) {
       {/* Remotes */}
       {remoteBranches.length > 0 && (
         <>
-          <SectionHeader title="Remotes">
+          <SectionHeader title="Remotes" count={remoteBranches.length}>
             <Globe size={13} style={{ color: "var(--text-muted)" }} />
           </SectionHeader>
           <div className="flex-1 overflow-y-auto">
@@ -229,6 +265,9 @@ export function Sidebar({ onRebase }: SidebarProps) {
                 key={b.name}
                 name={b.name}
                 isHead={b.is_head}
+                selected={selectedBranch === b.name}
+                upstream={b.upstream}
+                onSelect={() => setSelectedBranch(b.name)}
                 onCheckout={() => handleCheckout(b.name)}
                 onDelete={() => deleteBranchMut.mutate(b.name)}
                 onContextMenu={(e) => openBranchMenu(e, b.name, b.is_head)}

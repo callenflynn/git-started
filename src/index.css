@@ -268,3 +268,25 @@ pre,
 .graph-row:hover .row-bg {
   fill: var(--bg-hover);
 }
+
+/* ======================== SIDEBAR ======================== */
+.branch-item {
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.branch-item:hover {
+  background: var(--bg-hover);
+}
+
+.branch-item.is-selected {
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.branch-item.is-head {
+  background: var(--accent-glow);
+}
+
+.branch-item.is-head:hover {
+  background: var(--accent-glow);
+}
