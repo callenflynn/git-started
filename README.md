@@ -4,9 +4,8 @@
 
 A fast, native Git GUI built with [Tauri](https://tauri.app), React, and Rust.
 
-![Theme: Dark](https://img.shields.io/badge/theme-dark-1E1E1E)
-![Theme: AMOLED](https://img.shields.io/badge/theme-amoled-000000)
-![Theme: Light](https://img.shields.io/badge/theme-light-FFEFE0)
+[![Tauri](https://img.shields.io/badge/Tauri-24C8D8?logo=tauri&logoColor=fff)](#)
+
 
 ## Features
 
