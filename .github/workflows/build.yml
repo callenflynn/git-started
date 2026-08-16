@@ -72,6 +72,9 @@ jobs:
         env:
           FORCE_VERSION: ${{ needs.prepare.outputs.version }}
 
+      - name: Clean stale bundles
+        run: rm -rf src-tauri/target/release/bundle src-tauri/target/universal-apple-darwin/release/bundle
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -147,6 +150,9 @@ jobs:
         env:
           FORCE_VERSION: ${{ needs.prepare.outputs.version }}
 
+      - name: Clean stale bundles
+        run: rm -rf src-tauri/target/release/bundle
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -209,6 +215,10 @@ jobs:
         run: node scripts/set-version.mjs
         env:
           FORCE_VERSION: ${{ needs.prepare.outputs.version }}
+
+      - name: Clean stale bundles
+        shell: pwsh
+        run: Remove-Item -Recurse -Force -ErrorAction SilentlyContinue src-tauri\target\release\bundle
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
