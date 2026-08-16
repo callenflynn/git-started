@@ -3,7 +3,6 @@ name: Build & Release
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -30,19 +29,10 @@ jobs:
         run: |
           SHA=$(git rev-parse --short HEAD)
           COUNT=$(git rev-list --count HEAD)
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            # Tagged build: version comes from the tag (e.g. v0.1.0 → 0.1.0).
-            TAG="${GITHUB_REF#refs/tags/}"
-            VERSION="${GITHUB_REF#refs/tags/v}"
-          else
-            # Branch/PR build: dev version for artifact naming only.
-            TAG="${SHA}"
-            VERSION="0.0.0-${COUNT}"
-          fi
           echo "COUNT=${COUNT}" >> $GITHUB_OUTPUT
           echo "SHA=${SHA}" >> $GITHUB_OUTPUT
-          echo "TAG=${TAG}" >> $GITHUB_OUTPUT
-          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "TAG=${SHA}" >> $GITHUB_OUTPUT
+          echo "VERSION=0.0.0-${COUNT}" >> $GITHUB_OUTPUT
 
   # ──────────────────── Platform builds ────────────────────
 
@@ -252,7 +242,7 @@ jobs:
   # ──────────────────── Release ────────────────────
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [prepare, build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
     permissions:
@@ -312,9 +302,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          name: ${{ needs.prepare.outputs.tag }}
+          name: ${{ needs.prepare.outputs.sha }}
           body: |
-            Version `${{ needs.prepare.outputs.version }}` — commit `${{ needs.prepare.outputs.sha }}`
+            Build `${{ needs.prepare.outputs.sha }}` — version `${{ needs.prepare.outputs.version }}`
 
             ### Windows
 
@@ -334,7 +324,7 @@ jobs:
 
             > Auto-updater is active for NSIS (Windows), DMG (macOS), and AppImage (Linux).
           draft: false
-          prerelease: false
+          prerelease: true
           make_latest: true
           files: |
             artifacts/**/*.dmg
