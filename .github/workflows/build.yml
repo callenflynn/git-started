@@ -31,7 +31,7 @@ jobs:
           COUNT=$(git rev-list --count HEAD)
           echo "COUNT=${COUNT}" >> $GITHUB_OUTPUT
           echo "SHA=${SHA}" >> $GITHUB_OUTPUT
-          echo "TAG=${SHA}" >> $GITHUB_OUTPUT
+          echo "TAG=latest" >> $GITHUB_OUTPUT
           echo "VERSION=0.0.0-${COUNT}" >> $GITHUB_OUTPUT
 
   # ──────────────────── Platform builds ────────────────────
@@ -275,7 +275,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.UPDATER_PRIVATE_KEY_PASSWORD }}
         run: |
           VER="${{ needs.prepare.outputs.version }}"
-          BASE="https://github.com/Notsk/git-started/releases/download/${{ needs.prepare.outputs.tag }}"
+          BASE="https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare.outputs.tag }}"
 
           SIGNATURE=""
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -f artifacts/signature.txt ]; then
@@ -308,11 +308,16 @@ jobs:
           EOF
           mv updates.json artifacts/
 
+      - name: Delete previous latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          name: ${{ needs.prepare.outputs.sha }}
+          name: ${{ needs.prepare.outputs.version }}
           body: |
             Build `${{ needs.prepare.outputs.sha }}` — version `${{ needs.prepare.outputs.version }}`
 
