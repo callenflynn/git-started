@@ -6,7 +6,7 @@ A fast, native Git GUI built with [Tauri](https://tauri.app), React, and Rust.
 
 [![Tauri](https://img.shields.io/badge/Tauri-24C8D8?logo=tauri&logoColor=fff)](#)
 
-<img src="/public/git-started.svg">
+<img src="/public/git-started.svg" height=70>
 ## Features
 
 - Commit graph with branch visualization
